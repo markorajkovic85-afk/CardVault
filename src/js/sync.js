@@ -1,7 +1,7 @@
 // CardVault — Offline Sync Engine
 
 import { getAllPendingSync, deletePendingSync } from './db.js';
-import { addContact, deleteContactFromSheets, updateContactInSheets, isConfigured } from './sheets-api.js';
+import { addRemoteContact, deleteRemoteContact, updateRemoteContact, isSyncConfigured, getSyncProvider } from './remote-sync-api.js';
 import { showToast } from '../components/toast.js';
 
 /**
@@ -10,7 +10,7 @@ import { showToast } from '../components/toast.js';
 export async function syncContact(contact) {
   const { addPendingSync } = await import('./db.js');
 
-  if (!isConfigured()) {
+  if (!isSyncConfigured()) {
     return { synced: false, reason: 'not configured' };
   }
 
@@ -20,7 +20,7 @@ export async function syncContact(contact) {
   }
 
   try {
-    await addContact(contact);
+    await addRemoteContact(contact);
     return { synced: true };
   } catch (err) {
     await addPendingSync('add', contact.id, contact);
@@ -34,7 +34,7 @@ export async function syncContact(contact) {
 export async function syncDelete(contactId) {
   const { addPendingSync } = await import('./db.js');
 
-  if (!isConfigured()) {
+  if (!isSyncConfigured()) {
     return { synced: false, reason: 'not configured' };
   }
 
@@ -44,7 +44,7 @@ export async function syncDelete(contactId) {
   }
 
   try {
-    await deleteContactFromSheets(contactId);
+    await deleteRemoteContact(contactId);
     return { synced: true };
   } catch (err) {
     await addPendingSync('delete', contactId);
@@ -58,7 +58,7 @@ export async function syncDelete(contactId) {
 export async function syncUpdate(contact) {
   const { addPendingSync } = await import('./db.js');
 
-  if (!isConfigured()) {
+  if (!isSyncConfigured()) {
     return { synced: false, reason: 'not configured' };
   }
 
@@ -68,7 +68,7 @@ export async function syncUpdate(contact) {
   }
 
   try {
-    await updateContactInSheets(contact);
+    await updateRemoteContact(contact);
     return { synced: true };
   } catch (err) {
     await addPendingSync('update', contact.id, contact);
@@ -80,7 +80,7 @@ export async function syncUpdate(contact) {
  * Flush all pending sync operations
  */
 export async function flushSyncQueue() {
-  if (!navigator.onLine || !isConfigured()) return;
+  if (!navigator.onLine || !isSyncConfigured()) return;
 
   const pending = await getAllPendingSync();
   if (pending.length === 0) return;
@@ -92,13 +92,13 @@ export async function flushSyncQueue() {
     try {
       switch (item.action) {
         case 'add':
-          await addContact(item.data);
+          await addRemoteContact(item.data);
           break;
         case 'delete':
-          await deleteContactFromSheets(item.contactId);
+          await deleteRemoteContact(item.contactId);
           break;
         case 'update':
-          await updateContactInSheets(item.data);
+          await updateRemoteContact(item.data);
           break;
       }
       await deletePendingSync(item.id);
@@ -109,8 +109,9 @@ export async function flushSyncQueue() {
     }
   }
 
+  const providerLabel = getSyncProvider() === 'notion' ? 'Notion' : 'Google Sheets';
   if (synced > 0) {
-    showToast(`Synced ${synced} contact${synced > 1 ? 's' : ''} to Google Sheets`, 'success', false);
+    showToast(`Synced ${synced} contact${synced > 1 ? 's' : ''} to ${providerLabel}`, 'success', false);
   }
   if (failed > 0) {
     showToast(`${failed} item${failed > 1 ? 's' : ''} failed to sync. Will retry later.`, 'warning');

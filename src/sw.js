@@ -1,6 +1,6 @@
 // CardVault — Service Worker
 
-const CACHE_NAME = 'cardvault-v1';
+const CACHE_NAME = 'cardvault-v2';
 const ASSETS = [
   './',
   './index.html',
@@ -12,6 +12,8 @@ const ASSETS = [
   './js/qr.js',
   './js/camera.js',
   './js/sheets-api.js',
+  './js/notion-api.js',
+  './js/remote-sync-api.js',
   './js/utils.js',
   './pages/my-card.js',
   './pages/scan.js',
