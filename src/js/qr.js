@@ -34,9 +34,15 @@ export function generateQR(container, contact) {
 export function buildVCard(contact) {
   if (!contact?.name) return '';
 
+  // Split name into first/last for the structured N property
+  const nameParts = contact.name.trim().split(/\s+/);
+  const lastName = nameParts.length > 1 ? nameParts.pop() : '';
+  const firstName = nameParts.join(' ');
+
   const lines = [
     'BEGIN:VCARD',
     'VERSION:3.0',
+    `N:${lastName};${firstName};;;`,
     `FN:${contact.name}`
   ];
 
