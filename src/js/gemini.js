@@ -1,8 +1,8 @@
 // CardVault — Google Gemini Vision API Client
 
 const API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
-// Try models in order: flash-lite has the most generous free tier
-const MODELS = ['gemini-2.0-flash-lite', 'gemini-2.0-flash', 'gemini-1.5-flash'];
+// Try models in order of free tier generosity
+const MODELS = ['gemini-2.0-flash-lite', 'gemini-2.5-flash', 'gemini-2.0-flash'];
 
 function getApiKey() {
   return (localStorage.getItem('geminiApiKey') || '').trim();
