@@ -4,6 +4,7 @@ import { saveContact, saveCardImages } from '../js/db.js';
 import { syncContact } from '../js/sync.js';
 import { captureFromCamera, uploadFromGallery } from '../js/camera.js';
 import { recognizeText, mergeFields } from '../js/ocr.js';
+import { isGeminiConfigured, extractFieldsWithAI } from '../js/gemini.js';
 import { showToast } from '../components/toast.js';
 import { uuid, escapeHtml, resizeBase64Image, createThumbnail } from '../js/utils.js';
 
@@ -150,6 +151,8 @@ function renderReview(container) {
     { key: 'website', label: 'Website', type: 'url' },
   ];
 
+  const hasGemini = isGeminiConfigured();
+
   container.innerHTML = `
     ${renderStepIndicator()}
     <h1>Review Details</h1>
@@ -163,14 +166,53 @@ function renderReview(container) {
         </div>
       `).join('')}
     </div>
+    ${hasGemini ? `
+      <button class="btn btn-secondary btn-block mt-16" id="smart-read-btn" style="border-color:var(--color-accent);color:var(--color-accent);">
+        &#10024; Smart Read (AI)
+      </button>
+      <p class="text-sm text-light text-center mt-8" id="smart-read-hint">Fields wrong? Let AI re-read the card.</p>
+    ` : ''}
     <div class="flex gap-8 mt-16">
       <button class="btn btn-secondary" id="back-btn" style="flex:1">Back</button>
       <button class="btn btn-primary" id="next-btn" style="flex:1">Next</button>
     </div>
   `;
 
+  // Smart Read (AI)
+  if (hasGemini) {
+    container.querySelector('#smart-read-btn').addEventListener('click', async () => {
+      const btn = container.querySelector('#smart-read-btn');
+      const hint = container.querySelector('#smart-read-hint');
+      btn.disabled = true;
+      btn.innerHTML = '<div class="spinner" style="width:18px;height:18px;border-width:2px;display:inline-block;vertical-align:middle;"></div> Reading with AI...';
+      hint.textContent = '';
+
+      try {
+        const aiFields = await extractFieldsWithAI(frontImage, backImage);
+
+        // Update form fields with AI results
+        REVIEW_FIELDS.forEach(f => {
+          const input = container.querySelector(`input[name="${f.key}"]`);
+          if (input && aiFields[f.key]) {
+            input.value = aiFields[f.key];
+            fields[f.key] = aiFields[f.key];
+          }
+        });
+
+        btn.innerHTML = '&#9989; AI Read Complete';
+        btn.style.borderColor = 'var(--color-success)';
+        btn.style.color = 'var(--color-success)';
+        showToast('Fields updated with AI reading', 'success', false);
+      } catch (err) {
+        btn.disabled = false;
+        btn.innerHTML = '&#10024; Smart Read (AI)';
+        hint.textContent = '';
+        showToast(`AI read failed: ${err.message}`, 'error');
+      }
+    });
+  }
+
   container.querySelector('#back-btn').addEventListener('click', () => {
-    // Save current edits
     saveFormFields(container);
     currentStep = 1;
     renderStep(container);

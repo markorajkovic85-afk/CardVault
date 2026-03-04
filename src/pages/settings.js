@@ -153,6 +153,19 @@ export async function render(container) {
       </div>
     </details>
 
+    <!-- AI Card Reading -->
+    <div class="card mb-16">
+      <h2>AI Card Reading</h2>
+      <p class="text-sm text-light mb-8">Use Google Gemini to intelligently read business cards when the default OCR gets fields wrong.</p>
+      <div class="form-group">
+        <label class="form-label">Gemini API Key</label>
+        <input class="form-input" type="password" id="gemini-key"
+          value="${localStorage.getItem('geminiApiKey') || ''}" placeholder="AIza...">
+      </div>
+      <button class="btn btn-secondary btn-block" id="save-gemini-btn">Save API Key</button>
+      <p class="text-sm text-light mt-8">Free tier: 15 requests/min. <a href="https://aistudio.google.com/apikey" target="_blank" style="color:var(--color-accent);">Get a free API key</a></p>
+    </div>
+
     <!-- App Info -->
     <div class="card">
       <h2>App Info</h2>
@@ -193,6 +206,18 @@ export async function render(container) {
     }
   });
 
+  // Save Gemini key
+  container.querySelector('#save-gemini-btn').addEventListener('click', () => {
+    const key = container.querySelector('#gemini-key').value.trim();
+    if (key) {
+      localStorage.setItem('geminiApiKey', key);
+      showToast('Gemini API key saved', 'success', false);
+    } else {
+      localStorage.removeItem('geminiApiKey');
+      showToast('Gemini API key removed', 'info', false);
+    }
+  });
+
   // Copy code
   container.querySelector('#copy-code-btn').addEventListener('click', () => {
     navigator.clipboard.writeText(APPS_SCRIPT_CODE).then(() => {
@@ -211,6 +236,8 @@ export async function render(container) {
     }
     localStorage.removeItem('sheetsWebAppUrl');
     localStorage.removeItem('sortPreference');
+    localStorage.removeItem('geminiApiKey');
+    localStorage.removeItem('myCardBackup');
     showToast('All local data cleared', 'success', false);
     setTimeout(() => location.reload(), 1000);
   });
