@@ -19,6 +19,18 @@ let editing = false;
 
 export async function render(container) {
   cardData = await getMyCard();
+
+  // Fallback: restore from localStorage if IndexedDB was cleared
+  if (!cardData) {
+    try {
+      const backup = localStorage.getItem('myCardBackup');
+      if (backup) {
+        cardData = JSON.parse(backup);
+        await saveMyCard(cardData);
+      }
+    } catch { /* ignore corrupt backup */ }
+  }
+
   editing = false;
 
   if (!cardData || !cardData.name) {
@@ -137,6 +149,8 @@ function renderEdit(container) {
 
     cardData = { ...cardData, ...formData };
     await saveMyCard(cardData);
+    // Backup to localStorage for persistence across cache clears
+    try { localStorage.setItem('myCardBackup', JSON.stringify(cardData)); } catch { /* quota */ }
     editing = false;
     showToast('Card saved!', 'success', false);
     renderCard(container);

@@ -1,6 +1,6 @@
 // CardVault — Contacts List Page
 
-import { getAllContacts, deleteContact as dbDeleteContact, deleteCardImages, bulkPutContacts } from '../js/db.js';
+import { getAllContacts, deleteContact as dbDeleteContact, deleteCardImages, bulkPutContacts, getAllPendingSync } from '../js/db.js';
 import { fetchContacts, isConfigured } from '../js/sheets-api.js';
 import { syncDelete } from '../js/sync.js';
 import { showToast } from '../components/toast.js';
@@ -12,18 +12,30 @@ let sortBy = localStorage.getItem('sortPreference') || 'date';
 
 export async function render(container) {
   contacts = await getAllContacts();
-  // Filter out pending deletes
   contacts = contacts.filter(c => !c.pendingDelete);
 
   renderList(container);
 
-  // Try refreshing from Sheets in background
+  // Try refreshing from Sheets in background — merge, don't replace
   if (navigator.onLine && isConfigured()) {
     try {
       const remote = await fetchContacts();
-      if (remote?.length >= 0) {
-        await bulkPutContacts(remote);
-        contacts = remote.filter(c => !c.pendingDelete);
+      if (remote && Array.isArray(remote)) {
+        // Find local contacts that haven't synced to Sheets yet
+        const pending = await getAllPendingSync();
+        const pendingAddIds = new Set(
+          pending.filter(p => p.action === 'add').map(p => p.contactId)
+        );
+        const remoteIds = new Set(remote.map(c => c.id));
+
+        // Keep local-only contacts (not on Sheets and either pending sync or never synced)
+        const localOnly = contacts.filter(c => !remoteIds.has(c.id));
+
+        // Merge: remote (source of truth for synced) + local-only (not yet synced)
+        const merged = [...remote, ...localOnly].filter(c => !c.pendingDelete);
+
+        await bulkPutContacts(merged);
+        contacts = merged;
         renderList(container);
       }
     } catch (err) {

@@ -1,14 +1,18 @@
 // CardVault — Offline Sync Engine
 
 import { getAllPendingSync, deletePendingSync } from './db.js';
-import { addContact, deleteContactFromSheets, updateContactInSheets } from './sheets-api.js';
+import { addContact, deleteContactFromSheets, updateContactInSheets, isConfigured } from './sheets-api.js';
 import { showToast } from '../components/toast.js';
 
 /**
- * Try to sync a contact to Google Sheets. If offline, queue it.
+ * Try to sync a contact to Google Sheets. If offline or not configured, queue it.
  */
 export async function syncContact(contact) {
   const { addPendingSync } = await import('./db.js');
+
+  if (!isConfigured()) {
+    return { synced: false, reason: 'not configured' };
+  }
 
   if (!navigator.onLine) {
     await addPendingSync('add', contact.id, contact);
@@ -30,6 +34,10 @@ export async function syncContact(contact) {
 export async function syncDelete(contactId) {
   const { addPendingSync } = await import('./db.js');
 
+  if (!isConfigured()) {
+    return { synced: false, reason: 'not configured' };
+  }
+
   if (!navigator.onLine) {
     await addPendingSync('delete', contactId);
     return { synced: false, reason: 'offline' };
@@ -45,10 +53,34 @@ export async function syncDelete(contactId) {
 }
 
 /**
+ * Try to update a contact in Sheets. If offline, queue it.
+ */
+export async function syncUpdate(contact) {
+  const { addPendingSync } = await import('./db.js');
+
+  if (!isConfigured()) {
+    return { synced: false, reason: 'not configured' };
+  }
+
+  if (!navigator.onLine) {
+    await addPendingSync('update', contact.id, contact);
+    return { synced: false, reason: 'offline' };
+  }
+
+  try {
+    await updateContactInSheets(contact);
+    return { synced: true };
+  } catch (err) {
+    await addPendingSync('update', contact.id, contact);
+    return { synced: false, reason: err.message };
+  }
+}
+
+/**
  * Flush all pending sync operations
  */
 export async function flushSyncQueue() {
-  if (!navigator.onLine) return;
+  if (!navigator.onLine || !isConfigured()) return;
 
   const pending = await getAllPendingSync();
   if (pending.length === 0) return;
