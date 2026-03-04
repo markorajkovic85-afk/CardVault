@@ -1,6 +1,8 @@
 // CardVault — Google Gemini Vision API Client
 
-const API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
+const API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
+// Try models in order: flash-lite has the most generous free tier
+const MODELS = ['gemini-2.0-flash-lite', 'gemini-2.0-flash', 'gemini-1.5-flash'];
 
 function getApiKey() {
   return (localStorage.getItem('geminiApiKey') || '').trim();
@@ -75,45 +77,62 @@ Return ONLY valid JSON, no markdown, no explanation.`;
     }
   };
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 30000);
+  // Try each model in order, falling back on quota/rate errors
+  let lastError = null;
 
-  try {
-    const res = await fetch(`${API_URL}?key=${apiKey}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-      signal: controller.signal
-    });
-    clearTimeout(timeout);
+  for (const model of MODELS) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 30000);
 
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      const msg = err?.error?.message || `API error ${res.status}`;
-      throw new Error(msg);
+    try {
+      const res = await fetch(`${API_BASE}/${model}:generateContent?key=${apiKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        signal: controller.signal
+      });
+      clearTimeout(timeout);
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        const msg = errData?.error?.message || `API error ${res.status}`;
+        // If quota exceeded, try the next model
+        if (res.status === 429 || msg.toLowerCase().includes('quota')) {
+          console.warn(`[Gemini] ${model} quota exceeded, trying next model...`);
+          lastError = new Error(msg);
+          continue;
+        }
+        throw new Error(msg);
+      }
+
+      const data = await res.json();
+      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+
+      // Parse JSON from response (handle potential markdown wrapping)
+      const jsonStr = text.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+      const fields = JSON.parse(jsonStr);
+
+      // Validate and sanitize
+      return {
+        name: (fields.name || '').trim(),
+        title: (fields.title || '').trim(),
+        company: (fields.company || '').trim(),
+        email: (fields.email || '').trim().toLowerCase(),
+        phone: (fields.phone || '').trim(),
+        website: (fields.website || '').trim()
+      };
+    } catch (err) {
+      clearTimeout(timeout);
+      if (err.name === 'AbortError') {
+        throw new Error('AI request timed out. Try again.');
+      }
+      lastError = err;
+      // Only retry on quota errors, not on other failures
+      if (!err.message?.toLowerCase().includes('quota')) {
+        throw err;
+      }
     }
-
-    const data = await res.json();
-    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
-
-    // Parse JSON from response (handle potential markdown wrapping)
-    const jsonStr = text.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
-    const fields = JSON.parse(jsonStr);
-
-    // Validate and sanitize
-    return {
-      name: (fields.name || '').trim(),
-      title: (fields.title || '').trim(),
-      company: (fields.company || '').trim(),
-      email: (fields.email || '').trim().toLowerCase(),
-      phone: (fields.phone || '').trim(),
-      website: (fields.website || '').trim()
-    };
-  } catch (err) {
-    clearTimeout(timeout);
-    if (err.name === 'AbortError') {
-      throw new Error('AI request timed out. Try again.');
-    }
-    throw err;
   }
+
+  throw lastError || new Error('All AI models exceeded quota. Try again later.');
 }
