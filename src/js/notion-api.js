@@ -47,7 +47,7 @@ export async function addContactToNotion(contact) {
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'text/plain' },
-    body: JSON.stringify({ action: 'add', ...contact })
+    body: JSON.stringify({ action: 'add', contact, ...contact })
   });
   const data = await res.json();
   if (!data.success) throw new Error(data.error || 'Failed to add contact');
@@ -61,7 +61,7 @@ export async function updateContactInNotion(contact) {
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'text/plain' },
-    body: JSON.stringify({ action: 'update', ...contact })
+    body: JSON.stringify({ action: 'update', contact, ...contact })
   });
   const data = await res.json();
   if (!data.success) throw new Error(data.error || 'Failed to update contact');

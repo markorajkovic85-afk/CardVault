@@ -78,6 +78,14 @@ export async function bulkPutContacts(contacts) {
   await tx.done;
 }
 
+export async function replaceAllContacts(contacts) {
+  const db = await getDB();
+  const tx = db.transaction('contacts', 'readwrite');
+  await tx.store.clear();
+  await Promise.all((contacts || []).map(c => tx.store.put(c)));
+  await tx.done;
+}
+
 // ===== Card Images =====
 
 export async function getCardImages(contactId) {
@@ -97,12 +105,13 @@ export async function deleteCardImages(contactId) {
 
 // ===== Pending Sync =====
 
-export async function addPendingSync(action, contactId, data = null) {
+export async function addPendingSync(action, contactId, data = null, targets = null) {
   const db = await getDB();
   await db.add('pendingSync', {
     action,
     contactId,
     data,
+    targets,
     timestamp: new Date().toISOString()
   });
 }
@@ -110,6 +119,14 @@ export async function addPendingSync(action, contactId, data = null) {
 export async function getAllPendingSync() {
   const db = await getDB();
   return await db.getAll('pendingSync');
+}
+
+
+export async function updatePendingSync(id, patch) {
+  const db = await getDB();
+  const existing = await db.get('pendingSync', id);
+  if (!existing) return;
+  await db.put('pendingSync', { ...existing, ...patch, id });
 }
 
 export async function deletePendingSync(id) {

@@ -1,9 +1,9 @@
 // CardVault — Settings Page
 
 import { showToast } from '../components/toast.js';
-import { getPendingSyncCount } from '../js/sync.js';
+import { getPendingSyncCount, exportAllToActiveBackends, importContactsFromProvider, getSyncModeLabel } from '../js/sync.js';
 import { getStorageEstimate } from '../js/db.js';
-import { getSyncProvider, setSyncProvider, testSyncConnection } from '../js/remote-sync-api.js';
+import { getSyncMode, setSyncMode, testProviderConnection, getProviderLabel } from '../js/remote-sync-api.js';
 
 const APPS_SCRIPT_CODE = `// CardVault — Google Apps Script Backend
 // Paste this into Extensions → Apps Script in your Google Sheet
@@ -125,10 +125,12 @@ function doGet(e) {
 }
 
 function doPost(e) {
-  const data = JSON.parse(e.postData.contents);
-  const action = data.action;
+  const payload = JSON.parse(e.postData.contents || '{}');
+  const data = payload.contact || payload;
+  const action = payload.action;
+
   if (action === 'add') return jsonResponse(addContact(data));
-  if (action === 'delete') return jsonResponse(deleteContact(data.id));
+  if (action === 'delete') return jsonResponse(deleteContact(data.id || payload.id));
   if (action === 'update') return jsonResponse(updateContact(data));
   return jsonResponse({ success: false, error: 'Unknown action' });
 }
@@ -184,28 +186,38 @@ function listContacts() {
 
 function addContact(data) {
   try {
-    const id = data.id || Utilities.getUuid();
-    const now = new Date().toISOString();
-    notionRequest('/pages', 'post', {
-      parent: { database_id: DATABASE_ID },
-      properties: buildProperties({ ...data, id, createdAt: data.createdAt || now, updatedAt: now })
-    });
-    return { success: true, id };
+    const contact = { ...data, id: data.id || Utilities.getUuid() };
+    const existingPageId = findPageIdByContactId(contact.id);
+    if (existingPageId) {
+      return updateContactByPageId(existingPageId, contact);
+    }
+    return createContactPage(contact);
   } catch (err) {
     return { success: false, error: err.message };
   }
 }
 
+function createContactPage(data) {
+  const now = new Date().toISOString();
+  const response = notionRequest('/pages', 'post', {
+    parent: { database_id: DATABASE_ID },
+    properties: buildProperties({ ...data, createdAt: data.createdAt || now, updatedAt: now, archived: false })
+  });
+  return { success: true, id: data.id, notionPageId: response.id };
+}
+
+function updateContactByPageId(pageId, data) {
+  notionRequest('/pages/' + pageId, 'patch', {
+    properties: buildProperties({ ...data, updatedAt: new Date().toISOString(), archived: false })
+  });
+  return { success: true, id: data.id, notionPageId: pageId };
+}
+
 function updateContact(data) {
   try {
     const pageId = findPageIdByContactId(data.id);
-    if (!pageId) return { success: false, error: 'Contact not found' };
-
-    notionRequest('/pages/' + pageId, 'patch', {
-      properties: buildProperties({ ...data, updatedAt: new Date().toISOString() })
-    });
-
-    return { success: true };
+    if (!pageId) return createContactPage(data);
+    return updateContactByPageId(pageId, data);
   } catch (err) {
     return { success: false, error: err.message };
   }
@@ -216,10 +228,7 @@ function deleteContact(id) {
     const pageId = findPageIdByContactId(id);
     if (!pageId) return { success: false, error: 'Contact not found' };
 
-    notionRequest('/pages/' + pageId, 'patch', {
-      archived: true
-    });
-
+    notionRequest('/pages/' + pageId, 'patch', { archived: true });
     return { success: true };
   } catch (err) {
     return { success: false, error: err.message };
@@ -249,7 +258,7 @@ function buildProperties(c) {
     ImageData: { rich_text: [{ text: { content: (c.imageData || '').substring(0, 1900) } }] },
     CreatedAt: { rich_text: [{ text: { content: c.createdAt || '' } }] },
     UpdatedAt: { rich_text: [{ text: { content: c.updatedAt || '' } }] },
-    Archived: { checkbox: false }
+    Archived: { checkbox: !!c.archived }
   };
 }
 
@@ -285,134 +294,155 @@ function jsonResponse(data) {
 }`;
 
 export async function render(container) {
-  const provider = getSyncProvider();
+  const syncMode = getSyncMode();
   const pendingCount = await getPendingSyncCount();
   const storage = await getStorageEstimate();
   const storageMB = (storage.usage / 1024 / 1024).toFixed(1);
-  const sheetsUrl = localStorage.getItem('sheetsWebAppUrl') || '';
-  const notionUrl = localStorage.getItem('notionWebAppUrl') || '';
-  const currentUrl = provider === 'notion' ? notionUrl : sheetsUrl;
 
   container.innerHTML = `
     <h1>Settings</h1>
 
     <div class="card mb-16">
-      <h2>Sync Destination</h2>
+      <h2>Sync Mode</h2>
+      <p class="text-sm text-light mb-8">Current: ${escapeHtmlBasic(getSyncModeLabel())}</p>
       <div class="form-group">
-        <label class="form-label">Choose where contacts are extracted and auto-updated</label>
-        <select class="form-input" id="sync-provider">
-          <option value="sheets" ${provider === 'sheets' ? 'selected' : ''}>Google Sheets</option>
-          <option value="notion" ${provider === 'notion' ? 'selected' : ''}>Notion Database</option>
+        <label class="form-label">Active backend(s)</label>
+        <select class="form-input" id="sync-mode">
+          <option value="sheets" ${syncMode === 'sheets' ? 'selected' : ''}>Google Sheets only</option>
+          <option value="notion" ${syncMode === 'notion' ? 'selected' : ''}>Notion only</option>
+          <option value="both" ${syncMode === 'both' ? 'selected' : ''}>Google Sheets + Notion (both)</option>
         </select>
       </div>
+    </div>
+
+    <div class="card mb-16">
+      <h2>Backend Connection URLs</h2>
       <div class="form-group">
-        <label class="form-label" id="sync-url-label">${provider === 'notion' ? 'Notion Web App URL' : 'Google Sheets Web App URL'}</label>
-        <input class="form-input" type="url" id="sync-url" value="${currentUrl}" placeholder="https://script.google.com/macros/s/...">
+        <label class="form-label">Google Sheets Web App URL</label>
+        <input class="form-input" type="url" id="sheets-url"
+          value="${localStorage.getItem('sheetsWebAppUrl') || ''}" placeholder="https://script.google.com/macros/s/...">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Notion Web App URL</label>
+        <input class="form-input" type="url" id="notion-url"
+          value="${localStorage.getItem('notionWebAppUrl') || ''}" placeholder="https://script.google.com/macros/s/...">
       </div>
       <div class="flex gap-8">
-        <button class="btn btn-secondary" id="save-url-btn" style="flex:1">Save</button>
-        <button class="btn btn-primary" id="test-btn" style="flex:1" ${!currentUrl ? 'disabled' : ''}>Test Connection</button>
+        <button class="btn btn-secondary" id="save-url-btn" style="flex:1">Save URLs</button>
+        <button class="btn btn-secondary" id="test-sheets-btn" style="flex:1">Test Google Sheets</button>
+        <button class="btn btn-secondary" id="test-notion-btn" style="flex:1">Test Notion</button>
       </div>
       <div id="connection-result"></div>
     </div>
 
-    <details class="collapsible card mb-16" ${provider === 'sheets' ? 'open' : ''}>
+    <div class="card mb-16">
+      <h2>Data Transfer</h2>
+      <p class="text-sm text-light mb-8">Use export to extract local data into active backend(s). Use import to recover local data from one source.</p>
+      <button class="btn btn-primary btn-block" id="export-btn">Export Local Contacts to Active Backend(s)</button>
+
+      <div class="form-group mt-16">
+        <label class="form-label">Import source</label>
+        <select class="form-input" id="import-source">
+          <option value="sheets">Google Sheets</option>
+          <option value="notion">Notion</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Import strategy</label>
+        <select class="form-input" id="import-strategy">
+          <option value="merge">Merge into local data</option>
+          <option value="replace">Replace all local contacts</option>
+        </select>
+      </div>
+      <button class="btn btn-secondary btn-block" id="import-btn">Import Contacts from Source</button>
+    </div>
+
+    <details class="collapsible card mb-16">
       <summary>Google Sheets Setup Guide</summary>
       <div class="content">
         <ol style="padding-left:20px;font-size:0.875rem;color:var(--color-text-light);line-height:1.8;">
           <li>Open your Google Sheet</li>
           <li>Go to <strong>Extensions → Apps Script</strong></li>
-          <li>Delete any existing code in <code>Code.gs</code></li>
-          <li>Paste the code below</li>
-          <li>Click <strong>Deploy → New Deployment</strong></li>
-          <li>Select <strong>Web App</strong> and set access to <strong>Anyone</strong></li>
-          <li>Copy the Web App URL and save it above</li>
+          <li>Paste the code below and deploy as Web App (Anyone)</li>
         </ol>
         <div class="code-block" style="margin-top:12px;">
           <button class="copy-btn" id="copy-sheets-code-btn">Copy</button>
-          <code id="sheets-script-code">${escapeHtmlBasic(APPS_SCRIPT_CODE)}</code>
+          <code>${escapeHtmlBasic(APPS_SCRIPT_CODE)}</code>
         </div>
       </div>
     </details>
 
-    <details class="collapsible card mb-16" ${provider === 'notion' ? 'open' : ''}>
-      <summary>Notion Setup Guide (auto-updates enabled)</summary>
+    <details class="collapsible card mb-16">
+      <summary>Notion Setup Guide (with upsert + import-friendly behavior)</summary>
       <div class="content">
         <ol style="padding-left:20px;font-size:0.875rem;color:var(--color-text-light);line-height:1.8;">
-          <li>Create a Notion integration and copy the secret token</li>
-          <li>Create a database with properties: Name, ID, Title, Company, Email, Phone, Website, Occasion, Date, Notes, ImageData, CreatedAt, UpdatedAt, Archived (checkbox)</li>
-          <li>Share the database with your integration</li>
-          <li>Paste the script below into Google Apps Script and set <code>NOTION_TOKEN</code> + <code>DATABASE_ID</code></li>
-          <li>Deploy as a Web App with <strong>Anyone</strong> access</li>
-          <li>Copy the deployment URL and save it above</li>
+          <li>Create a Notion integration and database</li>
+          <li>Share the database with the integration</li>
+          <li>Set <code>NOTION_TOKEN</code> and <code>DATABASE_ID</code></li>
+          <li>Deploy the script as Web App (Anyone)</li>
         </ol>
         <div class="code-block" style="margin-top:12px;">
           <button class="copy-btn" id="copy-notion-code-btn">Copy</button>
-          <code id="notion-script-code">${escapeHtmlBasic(NOTION_APPS_SCRIPT_CODE)}</code>
+          <code>${escapeHtmlBasic(NOTION_APPS_SCRIPT_CODE)}</code>
         </div>
       </div>
     </details>
 
     <div class="card mb-16">
       <h2>AI Card Reading</h2>
-      <p class="text-sm text-light mb-8">Use Google Gemini to intelligently read business cards when the default OCR gets fields wrong.</p>
       <div class="form-group">
         <label class="form-label">Gemini API Key</label>
         <input class="form-input" type="password" id="gemini-key"
           value="${localStorage.getItem('geminiApiKey') || ''}" placeholder="AIza...">
       </div>
       <button class="btn btn-secondary btn-block" id="save-gemini-btn">Save API Key</button>
-      <p class="text-sm text-light mt-8">Free tier: 15 requests/min. <a href="https://aistudio.google.com/apikey" target="_blank" style="color:var(--color-accent);">Get a free API key</a></p>
     </div>
 
     <div class="card">
       <h2>App Info</h2>
-      <p class="text-sm text-light">Version: 1.1.0</p>
+      <p class="text-sm text-light">Version: 1.2.0</p>
       <p class="text-sm text-light">Storage used: ${storageMB} MB</p>
       ${pendingCount > 0 ? `<p class="text-sm" style="color:var(--color-warning);">Pending sync: ${pendingCount} item${pendingCount > 1 ? 's' : ''}</p>` : ''}
       <button class="btn btn-danger btn-block mt-16" id="clear-data-btn">Clear All Local Data</button>
     </div>
   `;
 
-  container.querySelector('#sync-provider').addEventListener('change', (e) => {
-    setSyncProvider(e.target.value);
-    showToast(`Sync destination set to ${e.target.value === 'notion' ? 'Notion' : 'Google Sheets'}`, 'success', false);
+  container.querySelector('#sync-mode').addEventListener('change', (e) => {
+    setSyncMode(e.target.value);
+    showToast(`Sync mode saved: ${e.target.options[e.target.selectedIndex].text}`, 'success', false);
     render(container);
   });
 
   container.querySelector('#save-url-btn').addEventListener('click', () => {
-    const url = container.querySelector('#sync-url').value.trim();
-    const selectedProvider = getSyncProvider();
-
-    if (selectedProvider === 'notion') {
-      localStorage.setItem('notionWebAppUrl', url);
-    } else {
-      localStorage.setItem('sheetsWebAppUrl', url);
-    }
-
-    container.querySelector('#test-btn').disabled = !url;
-    showToast('Sync URL saved', 'success', false);
+    localStorage.setItem('sheetsWebAppUrl', container.querySelector('#sheets-url').value.trim());
+    localStorage.setItem('notionWebAppUrl', container.querySelector('#notion-url').value.trim());
+    showToast('Backend URLs saved', 'success', false);
   });
 
-  container.querySelector('#test-btn').addEventListener('click', async () => {
-    const resultDiv = container.querySelector('#connection-result');
-    resultDiv.innerHTML = '<div class="loading-overlay" style="padding:16px;"><div class="spinner"></div><p>Testing...</p></div>';
+  container.querySelector('#test-sheets-btn').addEventListener('click', () => runConnectionTest(container, 'sheets'));
+  container.querySelector('#test-notion-btn').addEventListener('click', () => runConnectionTest(container, 'notion'));
 
-    const result = await testSyncConnection();
+  container.querySelector('#export-btn').addEventListener('click', async () => {
+    try {
+      showToast('Export started...', 'info', false);
+      const result = await exportAllToActiveBackends();
+      showToast(`Export done. ${result.exported}/${result.total} contacts exported.`, result.failed ? 'warning' : 'success', false);
+    } catch (err) {
+      showToast(`Export failed: ${err.message}`, 'error');
+    }
+  });
 
-    if (result.success) {
-      const targetName = result.databaseTitle || result.sheetName || 'Connected target';
-      resultDiv.innerHTML = `
-        <div class="connection-result success">
-          &#9989; Connected! <strong>${escapeHtmlBasic(targetName)}</strong>
-        </div>
-      `;
-    } else {
-      resultDiv.innerHTML = `
-        <div class="connection-result error">
-          &#10060; ${escapeHtmlBasic(result.error)}
-        </div>
-      `;
+  container.querySelector('#import-btn').addEventListener('click', async () => {
+    const provider = container.querySelector('#import-source').value;
+    const replaceLocal = container.querySelector('#import-strategy').value === 'replace';
+
+    if (replaceLocal && !confirm('Replace will wipe all local contacts before importing. Continue?')) return;
+
+    try {
+      const result = await importContactsFromProvider(provider, replaceLocal);
+      showToast(`Imported ${result.imported} contacts from ${getProviderLabel(provider)}.`, 'success', false);
+    } catch (err) {
+      showToast(`Import failed: ${err.message}`, 'error');
     }
   });
 
@@ -439,12 +469,26 @@ export async function render(container) {
     localStorage.removeItem('sheetsWebAppUrl');
     localStorage.removeItem('notionWebAppUrl');
     localStorage.removeItem('syncProvider');
+    localStorage.removeItem('syncMode');
     localStorage.removeItem('sortPreference');
     localStorage.removeItem('geminiApiKey');
     localStorage.removeItem('myCardBackup');
     showToast('All local data cleared', 'success', false);
     setTimeout(() => location.reload(), 1000);
   });
+}
+
+async function runConnectionTest(container, provider) {
+  const resultDiv = container.querySelector('#connection-result');
+  resultDiv.innerHTML = '<div class="loading-overlay" style="padding:16px;"><div class="spinner"></div><p>Testing...</p></div>';
+
+  const result = await testProviderConnection(provider);
+  if (result.success) {
+    const targetName = result.databaseTitle || result.sheetName || getProviderLabel(provider);
+    resultDiv.innerHTML = `<div class="connection-result success">&#9989; ${escapeHtmlBasic(getProviderLabel(provider))} connected: <strong>${escapeHtmlBasic(targetName)}</strong></div>`;
+  } else {
+    resultDiv.innerHTML = `<div class="connection-result error">&#10060; ${escapeHtmlBasic(result.error || 'Connection failed')}</div>`;
+  }
 }
 
 function copyCode(code) {
@@ -456,5 +500,5 @@ function copyCode(code) {
 }
 
 function escapeHtmlBasic(str) {
-  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }

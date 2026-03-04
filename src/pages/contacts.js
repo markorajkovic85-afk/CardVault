@@ -1,7 +1,7 @@
 // CardVault — Contacts List Page
 
 import { getAllContacts, deleteContact as dbDeleteContact, deleteCardImages, bulkPutContacts, getAllPendingSync } from '../js/db.js';
-import { fetchRemoteContacts, isSyncConfigured, getSyncProvider } from '../js/remote-sync-api.js';
+import { fetchContactsFromActiveProviders, isSyncConfigured, getSyncMode } from '../js/remote-sync-api.js';
 import { syncDelete } from '../js/sync.js';
 import { showToast } from '../components/toast.js';
 import { escapeHtml, formatDate, getInitials, debounce } from '../js/utils.js';
@@ -19,7 +19,7 @@ export async function render(container) {
   // Try refreshing from remote sync provider in background — merge, don't replace
   if (navigator.onLine && isSyncConfigured()) {
     try {
-      const remote = await fetchRemoteContacts();
+      const remote = await fetchContactsFromActiveProviders();
       if (remote && Array.isArray(remote)) {
         // Find local contacts that haven't synced to Sheets yet
         const pending = await getAllPendingSync();
@@ -39,7 +39,7 @@ export async function render(container) {
         renderList(container);
       }
     } catch (err) {
-      console.warn(`Failed to refresh from ${getSyncProvider()}:`, err);
+      console.warn(`Failed to refresh from ${getSyncMode()}:`, err);
     }
   }
 }
