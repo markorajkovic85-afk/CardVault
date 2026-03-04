@@ -1,86 +1,136 @@
 // CardVault — Offline Sync Engine
 
-import { getAllPendingSync, deletePendingSync } from './db.js';
-import { addContact, deleteContactFromSheets, updateContactInSheets, isConfigured } from './sheets-api.js';
+import { getAllPendingSync, deletePendingSync, updatePendingSync, getAllContacts, bulkPutContacts, replaceAllContacts, saveContact } from './db.js';
+import {
+  addContactToProvider,
+  deleteContactFromProvider,
+  updateContactInProvider,
+  isSyncConfigured,
+  getConfiguredActiveProviders,
+  fetchContactsFromProvider,
+  getProviderLabel,
+  getSyncMode
+} from './remote-sync-api.js';
 import { showToast } from '../components/toast.js';
 
+function wait(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function syncToTargets(action, contactId, data, requestedTargets = null) {
+  const { addPendingSync } = await import('./db.js');
+
+  const targets = (requestedTargets && requestedTargets.length > 0)
+    ? requestedTargets
+    : getConfiguredActiveProviders();
+
+  if (targets.length === 0) {
+    return { synced: false, reason: 'not configured', syncedTargets: [], failedTargets: [] };
+  }
+
+  if (!navigator.onLine) {
+    await addPendingSync(action, contactId, data, targets);
+    return { synced: false, reason: 'offline', syncedTargets: [], failedTargets: targets };
+  }
+
+  const failedTargets = [];
+  const syncedTargets = [];
+
+  for (const provider of targets) {
+    try {
+      let response;
+      if (action === 'add') response = await addContactToProvider(provider, data);
+      if (action === 'update') response = await updateContactInProvider(provider, data);
+      if (action === 'delete') response = await deleteContactFromProvider(provider, contactId);
+
+      if (provider === 'notion' && data && response?.notionPageId) {
+        await saveContact({ ...data, notionPageId: response.notionPageId });
+      }
+
+      syncedTargets.push(provider);
+    } catch (err) {
+      console.warn(`Sync ${action} failed for ${provider}:`, err);
+      failedTargets.push(provider);
+    }
+  }
+
+  if (failedTargets.length > 0) {
+    await addPendingSync(action, contactId, data, failedTargets);
+  }
+
+  return {
+    synced: failedTargets.length === 0,
+    reason: failedTargets.length === 0 ? '' : 'partial failure',
+    syncedTargets,
+    failedTargets
+  };
+}
+
 /**
- * Try to sync a contact to Google Sheets. If offline or not configured, queue it.
+ * Try to sync a contact to the active backend(s). If offline or not configured, queue it.
  */
 export async function syncContact(contact) {
-  const { addPendingSync } = await import('./db.js');
-
-  if (!isConfigured()) {
-    return { synced: false, reason: 'not configured' };
-  }
-
-  if (!navigator.onLine) {
-    await addPendingSync('add', contact.id, contact);
-    return { synced: false, reason: 'offline' };
-  }
-
-  try {
-    await addContact(contact);
-    return { synced: true };
-  } catch (err) {
-    await addPendingSync('add', contact.id, contact);
-    return { synced: false, reason: err.message };
-  }
+  return syncToTargets('add', contact.id, contact);
 }
 
 /**
- * Try to delete from Sheets. If offline, queue it.
+ * Try to delete a contact from active backend(s). If offline, queue it.
  */
 export async function syncDelete(contactId) {
-  const { addPendingSync } = await import('./db.js');
-
-  if (!isConfigured()) {
-    return { synced: false, reason: 'not configured' };
-  }
-
-  if (!navigator.onLine) {
-    await addPendingSync('delete', contactId);
-    return { synced: false, reason: 'offline' };
-  }
-
-  try {
-    await deleteContactFromSheets(contactId);
-    return { synced: true };
-  } catch (err) {
-    await addPendingSync('delete', contactId);
-    return { synced: false, reason: err.message };
-  }
+  return syncToTargets('delete', contactId, null);
 }
 
 /**
- * Try to update a contact in Sheets. If offline, queue it.
+ * Try to update a contact in active backend(s). If offline, queue it.
  */
 export async function syncUpdate(contact) {
-  const { addPendingSync } = await import('./db.js');
+  return syncToTargets('update', contact.id, contact);
+}
 
-  if (!isConfigured()) {
-    return { synced: false, reason: 'not configured' };
+/**
+ * Export local contacts to active backend(s), sequentially to avoid rate-limit spikes.
+ */
+export async function exportAllToActiveBackends() {
+  if (!navigator.onLine) throw new Error('Device is offline');
+  if (!isSyncConfigured()) throw new Error('No backend configured');
+
+  const contacts = (await getAllContacts()).filter(c => !c.pendingDelete);
+  let exported = 0;
+  let failed = 0;
+
+  for (const contact of contacts) {
+    const result = await syncToTargets('add', contact.id, contact);
+    if (result.synced) exported++;
+    else failed++;
+    await wait(getSyncMode() === 'both' ? 300 : 180);
   }
 
-  if (!navigator.onLine) {
-    await addPendingSync('update', contact.id, contact);
-    return { synced: false, reason: 'offline' };
+  return { total: contacts.length, exported, failed };
+}
+
+/**
+ * Import contacts from one provider and merge or replace local data.
+ */
+export async function importContactsFromProvider(provider, replaceLocal = false) {
+  if (!navigator.onLine) throw new Error('Device is offline');
+
+  const remote = await fetchContactsFromProvider(provider);
+  if (!Array.isArray(remote)) throw new Error('Invalid remote response');
+
+  if (replaceLocal) {
+    await replaceAllContacts(remote);
+  } else {
+    await bulkPutContacts(remote);
   }
 
-  try {
-    await updateContactInSheets(contact);
-    return { synced: true };
-  } catch (err) {
-    await addPendingSync('update', contact.id, contact);
-    return { synced: false, reason: err.message };
-  }
+  return { imported: remote.length, replaceLocal };
 }
 
 /**
  * Flush all pending sync operations
  */
 export async function flushSyncQueue() {
-  if (!navigator.onLine || !isConfigured()) return;
+  if (!navigator.onLine || !isSyncConfigured()) return;
 
   const pending = await getAllPendingSync();
   if (pending.length === 0) return;
@@ -89,31 +139,29 @@ export async function flushSyncQueue() {
   let failed = 0;
 
   for (const item of pending) {
-    try {
-      switch (item.action) {
-        case 'add':
-          await addContact(item.data);
-          break;
-        case 'delete':
-          await deleteContactFromSheets(item.contactId);
-          break;
-        case 'update':
-          await updateContactInSheets(item.data);
-          break;
-      }
+    const targets = (item.targets && item.targets.length > 0)
+      ? item.targets
+      : getConfiguredActiveProviders();
+
+    const result = await syncToTargets(item.action, item.contactId, item.data, targets);
+
+    if (result.failedTargets.length === 0) {
       await deletePendingSync(item.id);
       synced++;
-    } catch (err) {
-      console.warn('Sync failed for item:', item.id, err);
+    } else if (result.syncedTargets.length > 0) {
+      await updatePendingSync(item.id, { targets: result.failedTargets });
+      synced++;
+      failed++;
+    } else {
       failed++;
     }
   }
 
   if (synced > 0) {
-    showToast(`Synced ${synced} contact${synced > 1 ? 's' : ''} to Google Sheets`, 'success', false);
+    showToast(`Synced ${synced} queued item${synced > 1 ? 's' : ''}`, 'success', false);
   }
   if (failed > 0) {
-    showToast(`${failed} item${failed > 1 ? 's' : ''} failed to sync. Will retry later.`, 'warning');
+    showToast(`${failed} queued item${failed > 1 ? 's' : ''} still pending.`, 'warning');
   }
 }
 
@@ -123,4 +171,10 @@ export async function flushSyncQueue() {
 export async function getPendingSyncCount() {
   const pending = await getAllPendingSync();
   return pending.length;
+}
+
+export function getSyncModeLabel() {
+  const mode = getSyncMode();
+  if (mode === 'both') return `${getProviderLabel('sheets')} + ${getProviderLabel('notion')}`;
+  return getProviderLabel(mode);
 }
