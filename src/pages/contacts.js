@@ -18,6 +18,14 @@ export async function render(container) {
 
   // Try refreshing from remote sync provider in background — merge, don't replace
   if (navigator.onLine && isSyncConfigured()) {
+    // Show subtle sync indicator
+    const list = container.querySelector('#contacts-list');
+    const syncHint = document.createElement('div');
+    syncHint.className = 'text-sm text-light text-center';
+    syncHint.style.padding = '8px';
+    syncHint.textContent = 'Syncing...';
+    if (list) list.parentNode.insertBefore(syncHint, list);
+
     try {
       const remote = await fetchContactsFromActiveProviders();
       if (remote && Array.isArray(remote)) {
@@ -40,6 +48,8 @@ export async function render(container) {
       }
     } catch (err) {
       console.warn(`Failed to refresh from ${getSyncMode()}:`, err);
+    } finally {
+      syncHint.remove();
     }
   }
 }

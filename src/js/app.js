@@ -22,8 +22,9 @@ async function navigate() {
   }
 
   try {
-    // Fade out
+    // Fade out and wait for transition to complete
     appEl.style.opacity = '0';
+    await new Promise(r => setTimeout(r, 150));
 
     const module = await loader();
     // Pass remaining path segments as params (e.g., /contact/123 → id = "123")

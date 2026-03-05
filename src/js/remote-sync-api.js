@@ -66,9 +66,20 @@ export async function fetchContactsFromActiveProviders() {
 
   const merged = new Map();
 
-  for (const provider of providers) {
-    const contacts = await fetchContactsFromProvider(provider);
-    for (const contact of contacts || []) {
+  // Fetch all providers in parallel with a 5s timeout per provider
+  const timeout = (ms) => new Promise((_, reject) =>
+    setTimeout(() => reject(new Error('timeout')), ms)
+  );
+
+  const results = await Promise.allSettled(
+    providers.map(provider =>
+      Promise.race([fetchContactsFromProvider(provider), timeout(5000)])
+    )
+  );
+
+  for (const result of results) {
+    if (result.status !== 'fulfilled' || !result.value) continue;
+    for (const contact of result.value) {
       const existing = merged.get(contact.id);
       if (!existing) {
         merged.set(contact.id, contact);
