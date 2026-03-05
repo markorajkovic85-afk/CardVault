@@ -119,7 +119,12 @@ export async function recognizeText(imageSource) {
  * Extract structured fields from raw OCR text
  */
 export function extractFields(text) {
-  const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+  const normalizedText = text
+    .replace(/[|]/g, 'I')
+    .replace(/[“”]/g, '"')
+    .replace(/[’]/g, "'");
+
+  const lines = normalizedText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
 
   const fields = {
     name: '',
@@ -130,18 +135,21 @@ export function extractFields(text) {
     website: ''
   };
 
-  // Extract email — flexible to handle OCR spacing errors
-  const emailRegex = /[\w.+-]+\s*@\s*[\w.-]+\.\s*[\w.]+/gi;
-  const emailMatch = text.match(emailRegex);
+  // Extract email — handle OCR spacing and small dot/comma artifacts.
+  const emailRegex = /[\w.+-]+\s*[@©]\s*[\w.-]+[.,]\s*[a-z]{2,}/gi;
+  const emailMatch = normalizedText.match(emailRegex);
   if (emailMatch) {
-    fields.email = emailMatch[0].replace(/\s/g, '').toLowerCase();
+    fields.email = emailMatch[0]
+      .replace(/\s/g, '')
+      .replace(/©/g, '@')
+      .replace(/,([a-z]{2,})$/i, '.$1')
+      .toLowerCase();
   }
 
-  // Extract phone — multiple patterns for OCR variations
+  // Extract phone — support +, 00 prefix and common OCR separators.
   const phonePatterns = [
-    /\+?\d[\d\s.()\-]{8,}\d/g,                         // General: digits with separators
-    /\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}/g,            // US: (123) 456-7890
-    /\+\d{1,3}[\s.-]?\d{3}[\s.-]?\d{3}[\s.-]?\d{4}/g, // International: +1-234-567-8901
+    /(?:\+|00)?\d[\d\s.()\/-]{7,}\d/g,
+    /\(?\d{2,4}\)?[\s.-]?\d{3}[\s.-]?\d{3,4}[\s.-]?\d{2,4}/g,
   ];
   for (const regex of phonePatterns) {
     const matches = text.match(regex);
@@ -154,69 +162,51 @@ export function extractFields(text) {
     }
   }
 
-  // Extract website — flexible for OCR artifacts
-  const urlPatterns = [
-    /(?:https?:\/\/|www\.)\s*[\w.-]+\.\s*[\w]{2,}[\S]*/gi,  // Standard URLs
-    /[\w.-]+\.\s*(?:com|org|net|io|co|info|biz)\b[\S]*/gi,  // Domain-like patterns without www
-  ];
-  for (const regex of urlPatterns) {
-    const matches = text.match(regex);
-    if (matches) {
-      // Pick the first match that isn't the email domain
-      const url = matches.find(m => !fields.email || !m.includes('@'));
-      if (url) {
-        fields.website = url.replace(/\s/g, '').replace(/[,;]+$/, '');
-        break;
-      }
-    }
+  // Extract website — support any TLD (including .hr), but avoid email fragments.
+  const websiteLine = lines.find((line) => {
+    if (line.includes('@')) return false;
+    return /^(?:https?:\/\/)?(?:www\.)?[\w-]+(?:\.[\w-]+)+(?:\/[\S]*)?$/i.test(line.replace(/\s/g, ''));
+  });
+  if (websiteLine) {
+    fields.website = websiteLine
+      .replace(/\s/g, '')
+      .replace(/,([a-z]{2,})$/i, '.$1')
+      .replace(/[,;]+$/, '')
+      .toLowerCase();
   }
 
-  // Extract name and company from remaining lines
-  // Remove lines that contain email, phone, website, or address patterns
+  // Extract name/company/title from remaining lines.
   const contentLines = lines.filter(line => {
     const lower = line.toLowerCase();
     if (fields.email && lower.includes(fields.email)) return false;
     if (fields.phone && line.includes(fields.phone)) return false;
     if (fields.website && lower.includes(fields.website.toLowerCase())) return false;
-    // Skip lines that look like phone numbers
-    if (/^\+?\d[\d\s.()\-]{6,}$/.test(line)) return false;
-    // Skip lines that are just numbers (fax, postal codes, etc.)
+    if (/^(?:\+|00)?\d[\d\s.()\/-]{6,}$/.test(line)) return false;
     if (/^\d[\d\s.+-]+$/.test(line)) return false;
-    // Skip address-like lines
-    if (/\b(street|st\.|avenue|ave\.|road|rd\.|blvd|suite|floor|city|state|zip|\d{5})\b/i.test(line)) return false;
-    // Skip lines that look like URLs or emails even if not matched above
-    if (/@/.test(line) || /www\./i.test(line) || /\.com\b/i.test(line)) return false;
-    // Skip very short lines (single characters, initials)
+    if (/\b(street|st\.|avenue|ave\.|road|rd\.|blvd|suite|floor|city|state|zip|mail|tel|mob|phone|\d{5})\b/i.test(line)) return false;
+    if (/@/.test(line) || /www\./i.test(line) || /\.[a-z]{2,}\b/i.test(line)) return false;
     if (line.length < 3) return false;
     return true;
   });
 
-  // Heuristic: first content line is likely the name
-  if (contentLines.length > 0) {
+  const twoWordName = contentLines.find(line => /\p{L}+[\s-]+\p{L}+/u.test(line));
+  if (twoWordName) {
+    fields.name = twoWordName;
+  } else if (contentLines.length > 0) {
     fields.name = contentLines[0];
   }
 
-  // Common title keywords
-  const titleKeywords = /\b(manager|director|engineer|developer|designer|ceo|cto|cfo|coo|vp|president|founder|consultant|analyst|specialist|coordinator|lead|head|chief|officer|advisor|partner|associate|intern|assistant|executive|architect|scientist|professor|dr\.|doctor|agent|realtor|broker|attorney|lawyer|accountant|therapist|nurse|pharmacist|technician|supervisor|strategist|planner)\b/i;
+  const titleKeywords = /\b(manager|director|engineer|developer|designer|ceo|cto|cfo|coo|vp|president|founder|consultant|analyst|specialist|coordinator|lead|head|chief|officer|advisor|partner|associate|intern|assistant|executive|architect|scientist|professor|dr\.|doctor|agent|realtor|broker|attorney|lawyer|accountant|therapist|nurse|pharmacist|technician|supervisor|strategist|planner|sales|marketing)\b/i;
 
-  // Try to find title and company from remaining lines
-  for (let i = 1; i < contentLines.length; i++) {
-    const line = contentLines[i];
+  for (const line of contentLines) {
+    if (line === fields.name) continue;
     if (!fields.title && titleKeywords.test(line)) {
       fields.title = line;
-    } else if (!fields.company && !titleKeywords.test(line)) {
+      continue;
+    }
+    if (!fields.company) {
       fields.company = line;
     }
-  }
-
-  // If no title found but we have extra lines, second line might be title
-  if (!fields.title && contentLines.length > 2) {
-    fields.title = contentLines[1];
-    if (!fields.company && contentLines.length > 2) {
-      fields.company = contentLines[2];
-    }
-  } else if (!fields.company && contentLines.length > 1 && !fields.title) {
-    fields.company = contentLines[1];
   }
 
   return fields;
