@@ -3,7 +3,7 @@
 import { saveContact, saveCardImages } from '../js/db.js';
 import { syncContact } from '../js/sync.js';
 import { captureFromCamera, uploadFromGallery } from '../js/camera.js';
-import { recognizeText, mergeFields } from '../js/ocr.js';
+import { recognizeText, mergeFields, normalizePhoneNumber } from '../js/ocr.js';
 import { isGeminiConfigured, extractFieldsWithAI } from '../js/gemini.js';
 import { showToast } from '../components/toast.js';
 import { uuid, escapeHtml, resizeBase64Image, createThumbnail } from '../js/utils.js';
@@ -344,7 +344,9 @@ async function doSave(container) {
 function saveFormFields(container) {
   ['name', 'title', 'company', 'email', 'phone', 'website'].forEach(key => {
     const input = container.querySelector(`input[name="${key}"]`);
-    if (input) fields[key] = input.value.trim();
+    if (!input) return;
+    const value = input.value.trim();
+    fields[key] = key === 'phone' ? normalizePhoneNumber(value) : value;
   });
 }
 

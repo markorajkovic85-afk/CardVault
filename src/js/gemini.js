@@ -4,6 +4,11 @@ const API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
 // Try models in order of free tier generosity
 const MODELS = ['gemini-2.0-flash-lite', 'gemini-2.5-flash', 'gemini-2.0-flash'];
 
+function normalizePhoneNumber(phone) {
+  if (!phone) return '';
+  return phone.trim().replace(/^\+/, '00');
+}
+
 function getApiKey() {
   return (localStorage.getItem('geminiApiKey') || '').trim();
 }
@@ -59,6 +64,9 @@ Return ONLY a JSON object with these exact keys (use empty string if not found):
   "phone": "Phone number (keep original formatting)",
   "website": "Website URL"
 }
+
+Important: preserve Balkan/Slavic diacritics exactly as printed (č, ć, š, ž, đ) for names, titles, and company fields.
+For phone values, if the number starts with + return it with 00 instead (example: +385... -> 00385...).
 
 ${backImageBase64 ? 'Two images are provided: the front and back of the card. Combine information from both sides.' : 'One image is provided: the front of the card.'}
 
@@ -118,7 +126,7 @@ Return ONLY valid JSON, no markdown, no explanation.`;
         title: (fields.title || '').trim(),
         company: (fields.company || '').trim(),
         email: (fields.email || '').trim().toLowerCase(),
-        phone: (fields.phone || '').trim(),
+        phone: normalizePhoneNumber(fields.phone || ''),
         website: (fields.website || '').trim()
       };
     } catch (err) {
