@@ -20,6 +20,31 @@ export function isGeminiConfigured() {
   return !!getApiKey();
 }
 
+function parseJsonResponse(text) {
+  const sanitized = text.replace(/[\x00-\x1f\x7f]/g, (ch) => {
+    if (ch === '\n' || ch === '\r' || ch === '\t') return ch;
+    return '';
+  });
+
+  const stripped = sanitized.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+
+  try {
+    return JSON.parse(stripped);
+  } catch (e) {
+    const start = stripped.indexOf('{');
+    const end = stripped.lastIndexOf('}');
+    if (start !== -1 && end > start) {
+      try {
+        return JSON.parse(stripped.slice(start, end + 1));
+      } catch (e2) {
+        // fall through
+      }
+    }
+    console.error('[Gemini] Failed to parse JSON response. Raw text:', text);
+    throw new Error('AI returned invalid data. Please try again.');
+  }
+}
+
 /**
  * Extract business card fields from an image using Gemini Vision
  * @param {string} imageBase64 - Base64 data URL of the card image
@@ -81,7 +106,20 @@ Return ONLY valid JSON, no markdown, no explanation.`;
     }],
     generationConfig: {
       temperature: 0.1,
-      maxOutputTokens: 500
+      maxOutputTokens: 1024,
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: "object",
+        properties: {
+          name: { type: "string" },
+          title: { type: "string" },
+          company: { type: "string" },
+          email: { type: "string" },
+          phone: { type: "string" },
+          website: { type: "string" }
+        },
+        required: ["name", "title", "company", "email", "phone", "website"]
+      }
     }
   };
 
@@ -116,9 +154,7 @@ Return ONLY valid JSON, no markdown, no explanation.`;
       const data = await res.json();
       const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
 
-      // Parse JSON from response (handle potential markdown wrapping)
-      const jsonStr = text.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
-      const fields = JSON.parse(jsonStr);
+      const fields = parseJsonResponse(text);
 
       // Validate and sanitize
       return {
