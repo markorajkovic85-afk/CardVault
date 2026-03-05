@@ -33,14 +33,27 @@ async function getWorker() {
   if (worker) return worker;
 
   const Tess = await loadTesseract();
-  worker = await Tess.createWorker('eng', 1, {
+  // Use English + Croatian packs so diacritics like čđšćž are recognized better.
+  worker = await Tess.createWorker('eng+hrv', 1, {
     logger: (m) => {
       if (m.status === 'recognizing text') {
         // Could dispatch progress events here
       }
     }
   });
+
+  // Keep spacing fidelity (helps emails/websites/phone numbers parse more accurately).
+  await worker.setParameters({
+    preserve_interword_spaces: '1'
+  });
+
   return worker;
+}
+
+export function normalizePhoneNumber(phone) {
+  if (!phone) return '';
+  // Normalize international prefix to avoid systems that reject a leading +.
+  return phone.trim().replace(/^\+/, '00');
 }
 
 /**
@@ -135,7 +148,7 @@ export function extractFields(text) {
     if (matches) {
       const valid = matches.filter(p => p.replace(/\D/g, '').length >= 7);
       if (valid.length > 0) {
-        fields.phone = valid[0].trim();
+        fields.phone = normalizePhoneNumber(valid[0]);
         break;
       }
     }
