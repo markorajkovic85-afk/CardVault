@@ -152,16 +152,13 @@ export function extractFields(text) {
     /\(?\d{2,4}\)?[\s.-]?\d{3}[\s.-]?\d{3,4}[\s.-]?\d{2,4}/g,
   ];
   for (const regex of phonePatterns) {
-    const matches = normalizedText.match(regex);
-    if (!matches) continue;
-
-    const valid = matches
-      .map((p) => p.replace(/[Oo]/g, '0'))
-      .filter((p) => p.replace(/\D/g, '').length >= 8);
-
-    if (valid.length > 0) {
-      fields.phone = normalizePhoneNumber(valid[0]);
-      break;
+    const matches = text.match(regex);
+    if (matches) {
+      const valid = matches.filter(p => p.replace(/\D/g, '').length >= 7);
+      if (valid.length > 0) {
+        fields.phone = normalizePhoneNumber(valid[0]);
+        break;
+      }
     }
   }
 
