@@ -180,6 +180,10 @@ export function extractFields(text) {
       .toLowerCase();
   }
 
+  const websiteRoot = getDomainRoot(fields.website);
+  const emailRoot = getDomainRoot(fields.email?.split('@')[1] || '');
+  const preferredRoot = websiteRoot || emailRoot;
+
   // Extract name/company/title from remaining lines.
   const contentLines = lines.filter(line => {
     const lower = line.toLowerCase();
@@ -192,6 +196,11 @@ export function extractFields(text) {
     if (/^\d[\d\s.+-]+$/.test(line)) return false;
     if (/\b(street|st\.|avenue|ave\.|road|rd\.|blvd|suite|floor|city|state|zip|mail|tel|mob|phone|\d{5})\b/i.test(line)) return false;
     if (/@/.test(line) || /www\./i.test(line) || /\.[a-z]{2,}\b/i.test(line)) return false;
+    const tokens = normalizeLine(line).split(/\s+/).filter(Boolean);
+    if (tokens.length >= 3) {
+      const shortTokens = tokens.filter(token => token.replace(/[^\p{L}]/gu, '').length <= 1).length;
+      if ((shortTokens / tokens.length) > 0.4) return false;
+    }
     if (line.length < 3) return false;
     return true;
   }).map(normalizeLine);
