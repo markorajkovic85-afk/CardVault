@@ -125,6 +125,10 @@ export function extractFields(text) {
     .replace(/[’]/g, "'");
 
   const lines = normalizedText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+  const normalizeLine = (line) => line.replace(/\s+/g, ' ').trim();
+  const getDomainRoot = (value) => value
+    ? value.replace(/^(?:https?:\/\/)?(?:www\.)?/i, '').split(/[./]/)[0].toLowerCase()
+    : '';
 
   const fields = {
     name: '',
@@ -161,6 +165,7 @@ export function extractFields(text) {
       }
     }
   }
+  const phoneDigits = fields.phone.replace(/\D/g, '');
 
   // Extract website — support any TLD (including .hr), but avoid email fragments.
   const websiteLine = lines.find((line) => {
@@ -180,40 +185,91 @@ export function extractFields(text) {
     const lower = line.toLowerCase();
     if (fields.email && lower.includes(fields.email)) return false;
     if (fields.phone && line.includes(fields.phone)) return false;
+    if (phoneDigits.length >= 7 && line.replace(/\D/g, '').includes(phoneDigits)) return false;
     if (fields.website && lower.includes(fields.website.toLowerCase())) return false;
-    if (/^(?:\+|00)?\d[\d\s.()\/-]{6,}$/.test(line)) return false;
+    if (/^(?:\s*(?:m|t|p|ph|mob|tel|phone)\s*[:.-]\s*)?(?:\+|00)?\d[\d\s.()\/-]{6,}$/.test(line)) return false;
+    if (/^(?:m|t|p|ph|mob|tel|phone)\s*[:.-]/i.test(line)) return false;
     if (/^\d[\d\s.+-]+$/.test(line)) return false;
     if (/\b(street|st\.|avenue|ave\.|road|rd\.|blvd|suite|floor|city|state|zip|mail|tel|mob|phone|\d{5})\b/i.test(line)) return false;
     if (/@/.test(line) || /www\./i.test(line) || /\.[a-z]{2,}\b/i.test(line)) return false;
     if (line.length < 3) return false;
     return true;
-  });
+  }).map(normalizeLine);
 
-  const twoWordName = contentLines.find(line => /\p{L}+[\s-]+\p{L}+/u.test(line));
-  if (twoWordName) {
-    fields.name = twoWordName;
+  const nameStopWords = /\b(international|technology|cluster|solutions?|systems?|group|company|services?|global|europe|european|innovation|digital|consulting)\b/i;
+  const titleKeywords = /\b(manager|director|engineer|developer|designer|ceo|cto|cfo|coo|vp|president|founder|consultant|analyst|specialist|coordinator|lead|head|chief|officer|advisor|partner|associate|intern|assistant|executive|architect|scientist|professor|dr\.|doctor|agent|realtor|broker|attorney|lawyer|accountant|therapist|nurse|pharmacist|technician|supervisor|strategist|planner|sales|marketing)\b/i;
+
+  const nameCandidates = contentLines.map((line, idx) => ({ line, idx, sourceIndexes: [idx] }));
+  for (let i = 0; i < contentLines.length - 1; i += 1) {
+    if (/^\p{L}[\p{L}'’.-]*$/u.test(contentLines[i]) && /^\p{L}[\p{L}'’.-]*$/u.test(contentLines[i + 1])) {
+      nameCandidates.push({
+        line: `${contentLines[i]} ${contentLines[i + 1]}`,
+        idx: i,
+        sourceIndexes: [i, i + 1]
+      });
+    }
+  }
+
+  const scoreNameCandidate = ({ line, idx }) => {
+    const tokens = line.split(/\s+/).filter(Boolean);
+    if (tokens.length < 2 || tokens.length > 4) return -10;
+    if (/[&@\d]/.test(line)) return -8;
+
+    let score = 0;
+    score += (tokens.length === 2 || tokens.length === 3) ? 5 : 2;
+    score += tokens.filter(t => t.replace(/[.'’-]/g, '').length > 1).length;
+    if (nameStopWords.test(line)) score -= 6;
+    if (titleKeywords.test(line)) score -= 8;
+    if (/^[^a-z]*$/.test(line) && tokens.length > 2) score -= 3;
+    score += Math.max(0, 3 - idx);
+    return score;
+  };
+
+  const bestName = nameCandidates
+    .map(candidate => ({ ...candidate, score: scoreNameCandidate(candidate) }))
+    .sort((a, b) => b.score - a.score)[0];
+
+  if (bestName && bestName.score > 0) {
+    fields.name = bestName.line;
   } else if (contentLines.length > 0) {
     fields.name = contentLines[0];
   }
 
-  const titleKeywords = /\b(manager|director|engineer|developer|designer|ceo|cto|cfo|coo|vp|president|founder|consultant|analyst|specialist|coordinator|lead|head|chief|officer|advisor|partner|associate|intern|assistant|executive|architect|scientist|professor|dr\.|doctor|agent|realtor|broker|attorney|lawyer|accountant|therapist|nurse|pharmacist|technician|supervisor|strategist|planner|sales|marketing)\b/i;
+  const nameSourceIndexes = new Set(bestName?.score > 0 ? bestName.sourceIndexes : []);
 
-  for (const line of contentLines) {
-    if (line === fields.name) continue;
+  const companyCandidates = [];
+  for (let i = 0; i < contentLines.length; i += 1) {
+    const line = contentLines[i];
+    if (nameSourceIndexes.has(i)) continue;
     if (!fields.title && titleKeywords.test(line)) {
       fields.title = line;
       continue;
     }
-    if (!fields.company) {
-      fields.company = line;
-    }
+    companyCandidates.push(line);
+  }
+
+  const websiteRoot = getDomainRoot(fields.website);
+  const emailRoot = getDomainRoot(fields.email?.split('@')[1] || '');
+  const preferredRoot = websiteRoot || emailRoot;
+
+  if (companyCandidates.length > 0) {
+    const bestCompany = companyCandidates
+      .map((line, idx) => {
+        let score = 0;
+        if (preferredRoot && line.toLowerCase().includes(preferredRoot)) score += 7;
+        if (/\b(inc|ltd|llc|gmbh|s\.r\.o\.|corp|group|cluster)\b/i.test(line)) score += 2;
+        if (!titleKeywords.test(line)) score += 1;
+        score += Math.max(0, 2 - idx);
+        return { line, score };
+      })
+      .sort((a, b) => b.score - a.score)[0];
+
+    fields.company = bestCompany.line;
   }
 
   // Fallback: derive company from website domain if company is still empty
   if (!fields.company && fields.website) {
-    const domain = fields.website
-      .replace(/^(?:https?:\/\/)?(?:www\.)?/i, '')
-      .split(/[./]/)[0];
+    const domain = getDomainRoot(fields.website);
     if (domain && domain.length > 2) {
       fields.company = domain.charAt(0).toUpperCase() + domain.slice(1);
     }
