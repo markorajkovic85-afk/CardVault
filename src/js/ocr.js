@@ -209,6 +209,16 @@ export function extractFields(text) {
     }
   }
 
+  // Fallback: derive company from website domain if company is still empty
+  if (!fields.company && fields.website) {
+    const domain = fields.website
+      .replace(/^(?:https?:\/\/)?(?:www\.)?/i, '')
+      .split(/[./]/)[0];
+    if (domain && domain.length > 2) {
+      fields.company = domain.charAt(0).toUpperCase() + domain.slice(1);
+    }
+  }
+
   return fields;
 }
 
