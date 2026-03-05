@@ -44,7 +44,7 @@ function renderEmpty(container) {
   container.innerHTML = `
     <h1>My Business Card</h1>
     <div class="empty-state">
-      <div class="icon">&#128188;</div>
+      <div class="icon"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--color-accent)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/></svg></div>
       <p>Set up your digital business card</p>
       <button class="btn btn-primary mt-16" id="setup-btn">Create My Card</button>
     </div>
@@ -65,14 +65,14 @@ function renderCard(container) {
       <div class="card-name">${escapeHtml(c.name)}</div>
       ${c.title ? `<div class="card-title">${escapeHtml(c.title)}</div>` : ''}
       ${c.company ? `<div class="card-company">${escapeHtml(c.company)}</div>` : ''}
-      ${c.email ? `<div class="card-detail">&#9993; ${escapeHtml(c.email)}</div>` : ''}
-      ${c.phone ? `<div class="card-detail">&#9742; ${escapeHtml(c.phone)}</div>` : ''}
-      ${c.website ? `<div class="card-detail">&#127760; ${escapeHtml(c.website)}</div>` : ''}
+      ${c.email ? `<div class="card-detail"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 6-10 7L2 6"/></svg> ${escapeHtml(c.email)}</div>` : ''}
+      ${c.phone ? `<div class="card-detail"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg> ${escapeHtml(c.phone)}</div>` : ''}
+      ${c.website ? `<div class="card-detail"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg> ${escapeHtml(c.website)}</div>` : ''}
     </div>
     <div class="qr-container" id="qr-code"></div>
     <div class="flex gap-8 mt-16">
-      <button class="btn btn-secondary" id="edit-btn" style="flex:1">&#9998; Edit</button>
-      <button class="btn btn-primary" id="share-btn" style="flex:1">&#128228; Share</button>
+      <button class="btn btn-secondary" id="edit-btn" style="flex:1"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg> Edit</button>
+      <button class="btn btn-primary" id="share-btn" style="flex:1"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg> Share</button>
     </div>
   `;
 
@@ -93,7 +93,7 @@ function renderEdit(container) {
     <div class="card">
       <div class="form-group text-center">
         <div id="photo-preview" style="width:80px;height:80px;border-radius:50%;margin:0 auto 8px;overflow:hidden;background:var(--color-bg);display:flex;align-items:center;justify-content:center;">
-          ${c.photo ? `<img src="${c.photo}" style="width:100%;height:100%;object-fit:cover">` : '<span style="font-size:2rem">&#128100;</span>'}
+          ${c.photo ? `<img src="${c.photo}" style="width:100%;height:100%;object-fit:cover">` : '<span style="font-size:2rem"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-light)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>'}
         </div>
         <button class="btn btn-secondary" id="photo-btn" style="font-size:0.813rem;padding:6px 16px">Change Photo</button>
         <input type="file" id="photo-input" accept="image/*" class="hidden">

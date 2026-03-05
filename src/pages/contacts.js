@@ -50,7 +50,7 @@ function renderList(container) {
   container.innerHTML = `
     <h1>Contacts</h1>
     <div class="search-container" style="position:relative;">
-      <span class="search-icon" style="position:absolute;left:14px;top:50%;transform:translateY(-50%);">&#128269;</span>
+      <span class="search-icon" style="position:absolute;left:14px;top:50%;transform:translateY(-50%);"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></span>
       <input class="search-input" type="text" placeholder="Search by name, company, or event..."
         value="${escapeHtml(searchQuery)}" id="search-input">
       <div class="sort-controls">
@@ -164,9 +164,9 @@ function renderContactItem(c) {
         <div class="contact-meta">${escapeHtml(c.occasion || '')} ${c.date ? '· ' + formatDate(c.date) : ''}</div>
       </div>
       <div class="contact-actions">
-        ${c.email ? `<a href="mailto:${escapeHtml(c.email)}" title="Email" onclick="event.stopPropagation()">&#9993;</a>` : ''}
-        ${c.phone ? `<a href="tel:${escapeHtml(c.phone)}" title="Call" onclick="event.stopPropagation()">&#9742;</a>` : ''}
-        <a class="delete-trigger" data-id="${c.id}" data-name="${escapeHtml(c.name || 'this contact')}" title="Delete" style="background:var(--color-error);color:white;">&#128465;</a>
+        ${c.email ? `<a href="mailto:${escapeHtml(c.email)}" title="Email" onclick="event.stopPropagation()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 6-10 7L2 6"/></svg></a>` : ''}
+        ${c.phone ? `<a href="tel:${escapeHtml(c.phone)}" title="Call" onclick="event.stopPropagation()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg></a>` : ''}
+        <a class="delete-trigger" data-id="${c.id}" data-name="${escapeHtml(c.name || 'this contact')}" title="Delete" style="background:var(--color-error);color:white;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></a>
       </div>
     </div>
   `;
@@ -178,7 +178,7 @@ function renderEmpty() {
   }
   return `
     <div class="empty-state">
-      <div class="icon">&#128101;</div>
+      <div class="icon"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--color-accent)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>
       <p>No contacts saved yet.<br>Scan your first business card!</p>
       <button class="btn btn-primary mt-16" onclick="location.hash='#/scan'">Scan a Card</button>
     </div>

@@ -22,14 +22,23 @@ async function navigate() {
   }
 
   try {
+    // Fade out
+    appEl.style.opacity = '0';
+
     const module = await loader();
     // Pass remaining path segments as params (e.g., /contact/123 → id = "123")
     const id = params[0] || null;
     appEl.innerHTML = '';
     await module.render(appEl, { id });
+
+    // Fade in
+    requestAnimationFrame(() => {
+      appEl.style.opacity = '1';
+    });
   } catch (err) {
     console.error('Navigation error:', err);
     appEl.innerHTML = '<div class="empty-state"><p>Error loading page</p></div>';
+    appEl.style.opacity = '1';
   }
 }
 

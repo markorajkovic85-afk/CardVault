@@ -65,8 +65,8 @@ function renderCapture(container, side) {
     ` : ''}
 
     <div class="scan-actions">
-      <button class="btn btn-primary" id="camera-btn">&#128247; Camera</button>
-      <button class="btn btn-secondary" id="upload-btn">&#128193; Upload</button>
+      <button class="btn btn-primary" id="camera-btn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg> Camera</button>
+      <button class="btn btn-secondary" id="upload-btn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg> Upload</button>
     </div>
 
     <div id="processing" class="loading-overlay hidden">
@@ -168,7 +168,7 @@ function renderReview(container) {
     </div>
     ${hasGemini ? `
       <button class="btn btn-secondary btn-block mt-16" id="smart-read-btn" style="border-color:var(--color-accent);color:var(--color-accent);">
-        &#10024; Smart Read (AI)
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg> Smart Read (AI)
       </button>
       <p class="text-sm text-light text-center mt-8" id="smart-read-hint">Fields wrong? Let AI re-read the card.</p>
     ` : ''}
@@ -199,13 +199,13 @@ function renderReview(container) {
           }
         });
 
-        btn.innerHTML = '&#9989; AI Read Complete';
+        btn.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--color-success)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg> AI Read Complete';
         btn.style.borderColor = 'var(--color-success)';
         btn.style.color = 'var(--color-success)';
         showToast('Fields updated with AI reading', 'success', false);
       } catch (err) {
         btn.disabled = false;
-        btn.innerHTML = '&#10024; Smart Read (AI)';
+        btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg> Smart Read (AI)';
         hint.textContent = '';
         showToast(`AI read failed: ${err.message}`, 'error');
       }
@@ -321,7 +321,7 @@ async function doSave(container) {
     // Reset and show success
     container.innerHTML = `
       <div class="empty-state">
-        <div class="icon">&#9989;</div>
+        <div class="icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--color-success)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg></div>
         <h2>Contact Saved!</h2>
         <p>${escapeHtml(fields.name || 'New contact')} has been added.</p>
         <button class="btn btn-primary mt-24" id="scan-another">Scan Another Card</button>
