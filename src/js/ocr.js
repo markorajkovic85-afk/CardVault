@@ -257,10 +257,6 @@ export function extractFields(text) {
     companyCandidates.push(line);
   }
 
-  const websiteRoot = getDomainRoot(fields.website);
-  const emailRoot = getDomainRoot(fields.email?.split('@')[1] || '');
-  const preferredRoot = websiteRoot || emailRoot;
-
   if (companyCandidates.length > 0) {
     const bestCompany = companyCandidates
       .map((line, idx) => {
