@@ -129,19 +129,6 @@ export function extractFields(text) {
   const getDomainRoot = (value) => value
     ? value.replace(/^(?:https?:\/\/)?(?:www\.)?/i, '').split(/[./]/)[0].toLowerCase()
     : '';
-  const deriveNameFromEmail = (email) => {
-    if (!email || !email.includes('@')) return '';
-    const local = email.split('@')[0];
-    const parts = local
-      .split(/[._-]+/)
-      .map((part) => part.replace(/\d+/g, ''))
-      .filter((part) => part.length >= 2);
-    if (parts.length < 2) return '';
-    return parts
-      .slice(0, 3)
-      .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
-      .join(' ');
-  };
 
   const fields = {
     name: '',
@@ -240,18 +227,6 @@ export function extractFields(text) {
     let score = 0;
     score += (tokens.length === 2 || tokens.length === 3) ? 5 : 2;
     score += tokens.filter(t => t.replace(/[.'’-]/g, '').length > 1).length;
-
-    const titleCaseTokens = tokens.filter((token) => /^\p{Lu}[\p{L}'’.-]*$/u.test(token)).length;
-    const lowerTokens = tokens.filter((token) => /^\p{Ll}[\p{L}'’.-]*$/u.test(token)).length;
-    const singleCharTokens = tokens.filter((token) => token.replace(/[^\p{L}]/gu, '').length === 1).length;
-
-    score += titleCaseTokens;
-    score -= lowerTokens * 2;
-    score -= singleCharTokens * 4;
-
-    if (singleCharTokens > 0) score -= 4;
-    if (lowerTokens > 0 && titleCaseTokens < 2) score -= 4;
-    if (preferredRoot && line.toLowerCase().includes(preferredRoot)) score -= 8;
     if (nameStopWords.test(line)) score -= 6;
     if (titleKeywords.test(line)) score -= 8;
     if (/^[^a-z]*$/.test(line) && tokens.length > 2) score -= 3;
@@ -263,14 +238,10 @@ export function extractFields(text) {
     .map(candidate => ({ ...candidate, score: scoreNameCandidate(candidate) }))
     .sort((a, b) => b.score - a.score)[0];
 
-  if (bestName && bestName.score >= 5) {
+  if (bestName && bestName.score > 0) {
     fields.name = bestName.line;
-  } else {
-    fields.name = deriveNameFromEmail(fields.email);
-    if (!fields.name && contentLines.length > 0) {
-      const firstLikelyName = contentLines.find((line) => /^\p{Lu}[\p{L}'’.-]+(?:\s+\p{Lu}[\p{L}'’.-]+)+$/u.test(line));
-      fields.name = firstLikelyName || '';
-    }
+  } else if (contentLines.length > 0) {
+    fields.name = contentLines[0];
   }
 
   const nameSourceIndexes = new Set(bestName?.score > 0 ? bestName.sourceIndexes : []);
@@ -286,31 +257,31 @@ export function extractFields(text) {
     companyCandidates.push(line);
   }
 
+  const websiteRoot = getDomainRoot(fields.website);
+  const emailRoot = getDomainRoot(fields.email?.split('@')[1] || '');
+  const preferredRoot = websiteRoot || emailRoot;
+
   if (companyCandidates.length > 0) {
     const bestCompany = companyCandidates
       .map((line, idx) => {
         let score = 0;
-        const tokens = line.split(/\s+/).filter(Boolean);
-        const shortTokens = tokens.filter((token) => token.replace(/[^\p{L}]/gu, '').length <= 1).length;
-
         if (preferredRoot && line.toLowerCase().includes(preferredRoot)) score += 7;
         if (/\b(inc|ltd|llc|gmbh|s\.r\.o\.|corp|group|cluster)\b/i.test(line)) score += 2;
         if (!titleKeywords.test(line)) score += 1;
-        if (shortTokens > 0) score -= 6;
-        if (/^\p{Lu}[\p{L}'’.-]+\s+\p{Lu}[\p{L}'’.-]+$/u.test(line)) score -= 4;
-        if (/\.$/.test(line) && tokens.length <= 3) score -= 3;
         score += Math.max(0, 2 - idx);
         return { line, score };
       })
       .sort((a, b) => b.score - a.score)[0];
 
-    if (bestCompany.score > 0) fields.company = bestCompany.line;
+    fields.company = bestCompany.line;
   }
 
-  // Fallback: derive company from website/email domain if company is still empty or looks like a personal name.
-  const companyLooksLikePerson = /^\p{Lu}[\p{L}'’.-]+\s+\p{Lu}[\p{L}'’.-]+$/u.test(fields.company);
-  if ((!fields.company || companyLooksLikePerson) && preferredRoot) {
-    fields.company = preferredRoot.charAt(0).toUpperCase() + preferredRoot.slice(1);
+  // Fallback: derive company from website domain if company is still empty
+  if (!fields.company && fields.website) {
+    const domain = getDomainRoot(fields.website);
+    if (domain && domain.length > 2) {
+      fields.company = domain.charAt(0).toUpperCase() + domain.slice(1);
+    }
   }
 
   return fields;
