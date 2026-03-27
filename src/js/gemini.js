@@ -7,8 +7,7 @@ const API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
 const MODELS = ['gemini-2.0-flash-lite', 'gemini-2.5-flash', 'gemini-2.0-flash'];
 const LOCAL_STORAGE_KEY = 'geminiApiKey';
 const PROFILE_METADATA_KEY = 'geminiApiKeyEncrypted';
-const ENCRYPTION_VERSION = 2;
-const ENCRYPTION_SALT_V2 = 'cardvault-gemini-profile-v2';
+const ENCRYPTION_VERSION = 1;
 
 function normalizePhoneNumber(phone) {
   if (!phone) return '';
@@ -40,7 +39,7 @@ function base64ToBytes(base64) {
   return bytes;
 }
 
-async function deriveUserScopedKey(userId, salt) {
+async function deriveUserScopedKey(userId) {
   if (!crypto?.subtle) {
     throw new Error('Browser crypto API unavailable');
   }
@@ -57,7 +56,7 @@ async function deriveUserScopedKey(userId, salt) {
   return crypto.subtle.deriveKey(
     {
       name: 'PBKDF2',
-      salt: encoder.encode(salt),
+      salt: encoder.encode(`${location.origin}:cardvault-gemini-profile-v1`),
       iterations: 120000,
       hash: 'SHA-256'
     },
@@ -69,7 +68,7 @@ async function deriveUserScopedKey(userId, salt) {
 }
 
 async function encryptApiKey(userId, apiKey) {
-  const key = await deriveUserScopedKey(userId, ENCRYPTION_SALT_V2);
+  const key = await deriveUserScopedKey(userId);
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const encoder = new TextEncoder();
   const encrypted = await crypto.subtle.encrypt(
@@ -80,7 +79,6 @@ async function encryptApiKey(userId, apiKey) {
 
   return {
     version: ENCRYPTION_VERSION,
-    saltVersion: 2,
     iv: bytesToBase64(iv),
     ciphertext: bytesToBase64(new Uint8Array(encrypted))
   };
@@ -88,28 +86,13 @@ async function encryptApiKey(userId, apiKey) {
 
 async function decryptApiKey(userId, payload) {
   if (!payload?.iv || !payload?.ciphertext) return '';
-  const saltCandidates = payload?.saltVersion === 2
-    ? [ENCRYPTION_SALT_V2]
-    : [
-        ENCRYPTION_SALT_V2,
-        `${location.origin}:cardvault-gemini-profile-v1`
-      ];
-
-  for (const salt of saltCandidates) {
-    try {
-      const key = await deriveUserScopedKey(userId, salt);
-      const decrypted = await crypto.subtle.decrypt(
-        { name: 'AES-GCM', iv: base64ToBytes(payload.iv) },
-        key,
-        base64ToBytes(payload.ciphertext)
-      );
-      return new TextDecoder().decode(decrypted).trim();
-    } catch {
-      // try next key version
-    }
-  }
-
-  throw new Error('Could not decrypt stored Gemini key');
+  const key = await deriveUserScopedKey(userId);
+  const decrypted = await crypto.subtle.decrypt(
+    { name: 'AES-GCM', iv: base64ToBytes(payload.iv) },
+    key,
+    base64ToBytes(payload.ciphertext)
+  );
+  return new TextDecoder().decode(decrypted).trim();
 }
 
 async function getAuthenticatedUser() {
