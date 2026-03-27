@@ -105,7 +105,7 @@ function renderCapture(container, side) {
     <p class="text-light text-sm mb-16">${isFront ? 'Take a photo or upload an image of the business card.' : 'Optionally scan the back for additional information.'}</p>
 
     ${isFront && frontImage ? `
-      <div class="scan-preview mb-16">
+      <div class="scan-preview has-image mb-16">
         <img src="${frontImage}" alt="Front of card">
       </div>
     ` : ''}
@@ -186,7 +186,7 @@ function renderPostOcrConfirmation(container) {
   container.innerHTML = `
     ${renderStepIndicator()}
     <div class="card scan-micro-state">
-      <div class="scan-preview preview-soft-fade mb-16">
+      <div class="scan-preview has-image preview-soft-fade mb-16">
         <img src="${frontImage}" alt="Front scan preview">
       </div>
       <h3>We’ve read the card.</h3>
