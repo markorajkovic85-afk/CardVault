@@ -3,6 +3,7 @@
 import { getSession, onAuthStateChange } from './supabase-auth.js';
 import { isSupabaseConfigured } from './supabase-client.js';
 import { shouldAllowRoute, isPublicRoute } from './auth-guard.js';
+import { hydrateGeminiKeyFromProfile } from './gemini.js';
 
 const routes = {
   '/login': () => import('../pages/login.js'),
@@ -70,6 +71,12 @@ window.addEventListener('online', async () => {
 });
 
 onAuthStateChange((_event, session) => {
+  if (session) {
+    hydrateGeminiKeyFromProfile().catch((err) => {
+      console.warn('Failed to sync Gemini key from profile:', err);
+    });
+  }
+
   if (!session && !isPublicRoute(location.hash.slice(1) || '/my-card')) {
     location.hash = '#/login';
     return;

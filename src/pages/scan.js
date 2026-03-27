@@ -4,7 +4,7 @@ import { saveContact, saveCardImages, getAllContacts } from '../js/db.js';
 import { syncContact } from '../js/sync.js';
 import { captureFromCamera, uploadFromGallery } from '../js/camera.js';
 import { recognizeText, mergeFields, normalizePhoneNumber } from '../js/ocr.js';
-import { isGeminiConfigured, extractFieldsWithAI } from '../js/gemini.js';
+import { isGeminiConfigured, extractFieldsWithAI, hydrateGeminiKeyFromProfile } from '../js/gemini.js';
 import { showToast } from '../components/toast.js';
 import { uuid, escapeHtml, resizeBase64Image, createThumbnail } from '../js/utils.js';
 
@@ -19,6 +19,7 @@ let contextData = { occasion: '', date: new Date().toISOString().split('T')[0], 
 let extractionSource = 'manual';
 
 export async function render(container) {
+  await hydrateGeminiKeyFromProfile();
   currentStep = 1;
   frontImage = null;
   backImage = null;
