@@ -15,6 +15,7 @@ let fields = { name: '', title: '', company: '', email: '', phone: '', website: 
 let contextData = { occasion: '', date: new Date().toISOString().split('T')[0], notes: '' };
 let ocrFallbackActive = false;
 let geminiFallbackActive = false;
+let aiAutoFallbackActive = false;
 
 export async function render(container) {
   // Reset state
@@ -25,6 +26,7 @@ export async function render(container) {
   contextData = { occasion: '', date: new Date().toISOString().split('T')[0], notes: '' };
   ocrFallbackActive = false;
   geminiFallbackActive = false;
+  aiAutoFallbackActive = false;
 
   renderStep(container);
 }
@@ -159,13 +161,31 @@ async function handleCapture(container, side, method) {
   processing.classList.remove('hidden');
 
   try {
-    const { fields: extracted } = await recognizeText(resized);
-
     if (side === 'front') {
-      fields = { ...extracted };
+      if (isGeminiConfigured()) {
+        try {
+          const aiFields = await extractFieldsWithAI(resized, null);
+          fields = { ...aiFields };
+          aiAutoFallbackActive = false;
+          ocrFallbackActive = false;
+        } catch (aiErr) {
+          aiAutoFallbackActive = true;
+          const { fields: extracted } = await recognizeText(resized);
+          fields = { ...extracted };
+          ocrFallbackActive = false;
+          console.warn('[CardVault] Automatic AI read failed, OCR fallback used.', aiErr);
+        }
+      } else {
+        const { fields: extracted } = await recognizeText(resized);
+        fields = { ...extracted };
+        aiAutoFallbackActive = false;
+        ocrFallbackActive = false;
+      }
       processing.classList.add('hidden');
-      renderPostOcrConfirmation(container);
+      currentStep = 3;
+      renderStep(container);
     } else {
+      const { fields: extracted } = await recognizeText(resized);
       // Merge back fields with front (don't overwrite)
       fields = mergeFields(fields, extracted);
       processing.classList.add('hidden');
@@ -176,6 +196,7 @@ async function handleCapture(container, side, method) {
   } catch (err) {
     processing.classList.add('hidden');
     ocrFallbackActive = true;
+    aiAutoFallbackActive = false;
     showToast(`OCR failed: ${err.message}. You can enter details manually.`, 'warning');
     currentStep = 3;
     renderStep(container);
@@ -232,9 +253,14 @@ function renderReview(container) {
     <h1>Review Details</h1>
     <p class="text-light text-sm mb-16">Check and correct the extracted information.</p>
     <div class="scan-ai-banner mb-16">
-      <strong>AI extracted ${REVIEW_FIELDS.filter((f) => Boolean(fields[f.key])).length} fields from your card.</strong>
+      <strong>${aiAutoFallbackActive || ocrFallbackActive ? 'We extracted' : 'AI extracted'} ${REVIEW_FIELDS.filter((f) => Boolean(fields[f.key])).length} fields from your card.</strong>
       <span>Please verify before saving.</span>
     </div>
+    ${aiAutoFallbackActive ? `
+      <div class="inline-alert mb-16">
+        AI unavailable — OCR used automatically. You can retry AI below.
+      </div>
+    ` : ''}
     ${ocrFallbackActive ? `
       <div class="inline-alert mb-16">
         We couldn’t read this card. You can still type details manually — your photos are saved.
@@ -253,10 +279,10 @@ function renderReview(container) {
     ${hasGemini ? `
       <button class="btn btn-secondary btn-block mt-16 btn-ai-secondary" id="smart-read-btn">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-        Smart Read
+        ${aiAutoFallbackActive ? 'Retry AI' : 'Smart Read'}
         <span class="ai-badge">Gemini</span>
       </button>
-      <p class="text-sm text-light text-center mt-8" id="smart-read-hint">Fields wrong? Let AI re-read the card.</p>
+      <p class="text-sm text-light text-center mt-8" id="smart-read-hint">${aiAutoFallbackActive ? 'Network back? Retry AI extraction.' : 'Fields wrong? Let AI re-read the card.'}</p>
       ${geminiFallbackActive ? '<p class="text-sm text-center mt-8"><span class="fallback-badge">AI re-read unavailable — using camera text only.</span></p>' : ''}
     ` : ''}
     <div class="flex gap-8 mt-16">
@@ -276,6 +302,7 @@ function renderReview(container) {
 
       try {
         geminiFallbackActive = false;
+        aiAutoFallbackActive = false;
         const aiFields = await extractFieldsWithAI(frontImage, backImage);
 
         // Update form fields with AI results
