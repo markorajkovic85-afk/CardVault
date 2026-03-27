@@ -815,6 +815,6 @@ textarea.form-input { resize: vertical; min-height: 80px; }
   }
 }
 @media (max-width: 560px) {
-  .steps { padding-bottom: 20px; }
-  .step-label { display: block; }
+  .steps { padding-bottom: 4px; }
+  .step-label { display: none; }
 }
