@@ -7,7 +7,13 @@ import { getSupabaseConfig, isSupabaseConfigured, saveSupabaseConfig } from '../
 import { getSession, signOut } from '../js/supabase-auth.js';
 import { getConfiguredActiveProviders, testProviderConnection } from '../js/remote-sync-api.js';
 import { isConfigured as isSheetsConfigured } from '../js/sheets-api.js';
-import { isGeminiConfigured } from '../js/gemini.js';
+import {
+  isGeminiConfigured,
+  getStoredGeminiKey,
+  saveGeminiKey,
+  clearGeminiKey,
+  hydrateGeminiKeyFromProfile
+} from '../js/gemini.js';
 
 function escapeHtmlBasic(value = '') {
   return value
@@ -19,6 +25,7 @@ function escapeHtmlBasic(value = '') {
 }
 
 export async function render(container) {
+  await hydrateGeminiKeyFromProfile();
   const pendingCount = await getPendingSyncCount();
   const storage = await getStorageEstimate();
   const storageMB = (storage.usage / 1024 / 1024).toFixed(1);
@@ -26,7 +33,7 @@ export async function render(container) {
   const session = await getSession();
   const sheetsUrl = localStorage.getItem('sheetsWebAppUrl') || '';
   const activeProviders = getConfiguredActiveProviders();
-  const geminiKey = localStorage.getItem('geminiApiKey') || '';
+  const geminiKey = getStoredGeminiKey();
   const geminiConfigured = isGeminiConfigured();
 
   const sheetsConfigHtml = `
@@ -71,7 +78,7 @@ export async function render(container) {
             placeholder="AIza…"
             value="${escapeHtmlBasic(geminiKey)}"
             autocomplete="off" spellcheck="false">
-          <p class="text-sm text-light mt-4">Stored locally on your device only — never sent to CardVault servers.</p>
+          <p class="text-sm text-light mt-4">Saved locally and, when signed in, encrypted in your Supabase profile to sync across devices.</p>
         </div>
         <div class="flex gap-8">
           <button class="btn btn-secondary" id="gemini-clear-btn" style="flex:1" ${geminiConfigured ? '' : 'disabled'}>Clear Key</button>
@@ -131,28 +138,43 @@ export async function render(container) {
   `;
 
   // ── Gemini handlers ──────────────────────────────────────────
-  container.querySelector('#gemini-save-btn').addEventListener('click', () => {
+  container.querySelector('#gemini-save-btn').addEventListener('click', async () => {
     const key = container.querySelector('#gemini-key').value.trim();
     if (!key) {
       showToast('Please enter a Gemini API key.', 'warning');
       return;
     }
-    localStorage.setItem('geminiApiKey', key);
+
+    const result = await saveGeminiKey(key);
     const statusEl = container.querySelector('#gemini-status');
     statusEl.textContent = '✅ Gemini is active — AI will automatically read your cards during scanning.';
     const clearBtn = container.querySelector('#gemini-clear-btn');
     if (clearBtn) clearBtn.removeAttribute('disabled');
-    showToast('Gemini API key saved.', 'success');
+
+    if (result.savedRemote) {
+      showToast('Gemini API key saved and synced to Supabase.', 'success');
+    } else if (result.error) {
+      showToast('Gemini key saved locally, but cloud sync failed.', 'warning');
+    } else {
+      showToast('Gemini API key saved locally.', 'success');
+    }
   });
 
-  container.querySelector('#gemini-clear-btn').addEventListener('click', () => {
-    localStorage.removeItem('geminiApiKey');
+  container.querySelector('#gemini-clear-btn').addEventListener('click', async () => {
+    const result = await clearGeminiKey();
     container.querySelector('#gemini-key').value = '';
     const statusEl = container.querySelector('#gemini-status');
     statusEl.textContent = 'ℹ️ Without a key, CardVault will use built-in OCR to read cards.';
     const clearBtn = container.querySelector('#gemini-clear-btn');
     if (clearBtn) clearBtn.setAttribute('disabled', '');
-    showToast('Gemini API key cleared.', 'info');
+
+    if (result.clearedRemote) {
+      showToast('Gemini API key cleared everywhere.', 'info');
+    } else if (result.error) {
+      showToast('Gemini key cleared locally, but cloud clear failed.', 'warning');
+    } else {
+      showToast('Gemini API key cleared locally.', 'info');
+    }
   });
 
   // ── Supabase handlers ────────────────────────────────────────
