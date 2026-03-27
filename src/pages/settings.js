@@ -7,6 +7,7 @@ import { getSupabaseConfig, isSupabaseConfigured, saveSupabaseConfig } from '../
 import { getSession, signOut } from '../js/supabase-auth.js';
 import { getConfiguredActiveProviders, testProviderConnection } from '../js/remote-sync-api.js';
 import { isConfigured as isSheetsConfigured } from '../js/sheets-api.js';
+import { isGeminiConfigured } from '../js/gemini.js';
 
 function escapeHtmlBasic(value = '') {
   return value
@@ -25,6 +26,9 @@ export async function render(container) {
   const session = await getSession();
   const sheetsUrl = localStorage.getItem('sheetsWebAppUrl') || '';
   const activeProviders = getConfiguredActiveProviders();
+  const geminiKey = localStorage.getItem('geminiApiKey') || '';
+  const geminiConfigured = isGeminiConfigured();
+
   const sheetsConfigHtml = `
     <p class="text-sm text-light mb-8">
       Connect a Google Sheet to mirror your contacts in real time.
@@ -48,6 +52,40 @@ export async function render(container) {
   container.innerHTML = `
     <h1>Settings</h1>
 
+    <!-- ── AI / Gemini ───────────────────────────────────────── -->
+    <details class="card collapsible mb-16" ${geminiConfigured ? 'open' : ''}>
+      <summary>AI / Gemini
+        <span style="margin-left:8px;font-size:0.75rem;font-weight:400;color:${geminiConfigured ? 'var(--color-success)' : 'var(--color-text-light)'}">
+          ${geminiConfigured ? '🟢 Configured' : '⚪ Not configured'}
+        </span>
+      </summary>
+      <div class="content">
+        <p class="text-sm text-light mb-8">
+          CardVault uses Google Gemini to automatically read business cards with high accuracy.
+          Get a free API key at
+          <a href="https://aistudio.google.com/app/apikey" target="_blank" style="color:var(--color-accent)">aistudio.google.com ↗</a>
+        </p>
+        <div class="form-group">
+          <label class="form-label">Gemini API Key</label>
+          <input class="form-input" id="gemini-key" type="password"
+            placeholder="AIza…"
+            value="${escapeHtmlBasic(geminiKey)}"
+            autocomplete="off" spellcheck="false">
+          <p class="text-sm text-light mt-4">Stored locally on your device only — never sent to CardVault servers.</p>
+        </div>
+        <div class="flex gap-8">
+          <button class="btn btn-secondary" id="gemini-clear-btn" style="flex:1" ${geminiConfigured ? '' : 'disabled'}>Clear Key</button>
+          <button class="btn btn-primary" id="gemini-save-btn" style="flex:1">Save Key</button>
+        </div>
+        <p class="text-sm text-light mt-8" id="gemini-status">
+          ${geminiConfigured
+            ? '✅ Gemini is active — AI will automatically read your cards during scanning.'
+            : 'ℹ️ Without a key, CardVault will use built-in OCR to read cards.'}
+        </p>
+      </div>
+    </details>
+
+    <!-- ── Supabase ──────────────────────────────────────────── -->
     <details class="card collapsible mb-16">
       <summary>Supabase</summary>
       <div class="content">
@@ -68,6 +106,7 @@ export async function render(container) {
       </div>
     </details>
 
+    <!-- ── Google Sheets ─────────────────────────────────────── -->
     <details class="card collapsible mb-16">
       <summary>Google Sheets Sync</summary>
       <div class="content">
@@ -75,6 +114,7 @@ export async function render(container) {
       </div>
     </details>
 
+    <!-- ── Data & Sync ───────────────────────────────────────── -->
     <details class="card collapsible mb-16">
       <summary>Data & Sync</summary>
       <div class="content">
@@ -90,6 +130,32 @@ export async function render(container) {
     </details>
   `;
 
+  // ── Gemini handlers ──────────────────────────────────────────
+  container.querySelector('#gemini-save-btn').addEventListener('click', () => {
+    const key = container.querySelector('#gemini-key').value.trim();
+    if (!key) {
+      showToast('Please enter a Gemini API key.', 'warning');
+      return;
+    }
+    localStorage.setItem('geminiApiKey', key);
+    const statusEl = container.querySelector('#gemini-status');
+    statusEl.textContent = '✅ Gemini is active — AI will automatically read your cards during scanning.';
+    const clearBtn = container.querySelector('#gemini-clear-btn');
+    if (clearBtn) clearBtn.removeAttribute('disabled');
+    showToast('Gemini API key saved.', 'success');
+  });
+
+  container.querySelector('#gemini-clear-btn').addEventListener('click', () => {
+    localStorage.removeItem('geminiApiKey');
+    container.querySelector('#gemini-key').value = '';
+    const statusEl = container.querySelector('#gemini-status');
+    statusEl.textContent = 'ℹ️ Without a key, CardVault will use built-in OCR to read cards.';
+    const clearBtn = container.querySelector('#gemini-clear-btn');
+    if (clearBtn) clearBtn.setAttribute('disabled', '');
+    showToast('Gemini API key cleared.', 'info');
+  });
+
+  // ── Supabase handlers ────────────────────────────────────────
   container.querySelector('#save-btn').addEventListener('click', () => {
     const url = container.querySelector('#supabase-url').value.trim();
     const anonKey = container.querySelector('#supabase-anon').value.trim();
