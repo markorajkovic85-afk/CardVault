@@ -550,6 +550,8 @@ textarea.form-input { resize: vertical; min-height: 80px; }
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
 }
+
+/* ===== Dashboard Bento Grid ===== */
 .dashboard-bento {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -587,19 +589,85 @@ textarea.form-input { resize: vertical; min-height: 80px; }
   grid-column: span 1;
   min-height: 140px;
 }
+
+/* ===== Export Bar (full-width, symmetrical) ===== */
 .bento-export-bar {
   grid-column: span 2;
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr auto auto auto;
   gap: 8px;
-  padding: 16px;
+  align-items: center;
+  padding: 14px 16px;
   background: var(--color-surface);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
   border: 1px solid rgba(0,0,0,0.04);
+}
+/* Equal-width export buttons */
+.bento-export-bar .btn {
+  min-width: 72px;
+  padding: 8px 12px;
+  font-size: 0.813rem;
+  justify-content: center;
+}
+/* Text block inside export bar */
+.bento-export-bar .export-label {
+  min-width: 0;
+  overflow: hidden;
+}
+.bento-export-bar .export-label p:first-child {
+  font-size: 0.813rem;
+  font-weight: 600;
+  color: var(--color-primary);
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.bento-export-bar .export-label p:last-child {
+  font-size: 0.75rem;
+  color: var(--color-text-light);
+  margin: 2px 0 0;
+}
+/* Sheets status badge aligned right */
+.bento-export-bar .sheets-badge {
+  display: inline-flex;
   align-items: center;
-  flex-wrap: wrap;
+  gap: 4px;
+  font-size: 0.75rem;
+  color: #166534;
+  background: rgba(34, 197, 94, 0.1);
+  border-radius: 999px;
+  padding: 5px 10px;
+  white-space: nowrap;
+  border: 1px solid rgba(34,197,94,0.2);
+}
+.bento-export-bar .sheets-badge span:first-child {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #22c55e;
+  display: inline-block;
+  flex-shrink: 0;
+}
+.bento-export-bar .sheets-link {
+  font-size: 0.75rem;
+  color: var(--color-text-light);
+  text-decoration: underline;
+  white-space: nowrap;
+}
+/* On very narrow screens stack into 2 rows */
+@media (max-width: 360px) {
+  .bento-export-bar {
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: auto auto;
+  }
+  .bento-export-bar .export-label {
+    grid-column: span 2;
+  }
 }
 
+/* ===== Stat Delta Badge ===== */
 .stat-delta {
   display: inline-flex;
   align-items: center;
@@ -736,13 +804,15 @@ textarea.form-input { resize: vertical; min-height: 80px; }
   transform: scale(1.01);
 }
 
-
 @media (max-width: 560px) {
   .dashboard-bento { grid-template-columns: 1fr; }
   .bento-trend,
   .bento-export-bar,
   .bento-stat,
   .bento-list { grid-column: span 1; }
+  .bento-export-bar {
+    grid-template-columns: 1fr auto auto;
+  }
 }
 @media (max-width: 560px) {
   .steps { padding-bottom: 20px; }
