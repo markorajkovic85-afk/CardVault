@@ -32,6 +32,7 @@ export async function render(container) {
 function renderStepIndicator() {
   const labels = ['Scan front', 'Scan back (optional)', 'Review fields', 'Add context', 'Done'];
   return `
+    <p class="sr-only" aria-live="polite">Current step: ${labels[currentStep - 1]}</p>
     <div class="step-phases" aria-label="Wizard phases">
       <span class="phase ${currentStep <= 2 ? 'active' : ''}">Capture</span>
       <span class="phase ${currentStep === 3 ? 'active' : ''}">Review</span>
@@ -75,7 +76,7 @@ function renderCapture(container, side) {
       <button class="btn btn-secondary" id="upload-btn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg> Upload</button>
     </div>
 
-    <div id="processing" class="loading-overlay hidden">
+    <div id="processing" class="loading-overlay hidden" role="status" aria-live="polite">
       <div class="spinner"></div>
       <p>Reading card...</p>
     </div>
@@ -317,7 +318,7 @@ function renderContext(container) {
 async function renderSaving(container) {
   container.innerHTML = `
     ${renderStepIndicator()}
-    <div class="loading-overlay">
+    <div class="loading-overlay" role="status" aria-live="polite">
       <div class="spinner"></div>
       <p>Saving contact...</p>
     </div>
