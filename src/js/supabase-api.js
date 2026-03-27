@@ -186,13 +186,27 @@ export async function fetchMyCardRemote() {
 }
 
 export async function saveMyCardRemote(cardData) {
+  const normalized = {
+    name: cardData?.name || '',
+    title: cardData?.title || '',
+    company: cardData?.company || '',
+    email: cardData?.email || '',
+    phone: cardData?.phone || '',
+    website: cardData?.website || '',
+    // Keep metadata small and deterministic across devices.
+    // Photos are stored locally and can exceed metadata limits.
+    photo: ''
+  };
+
   try {
     const supabase = getSupabaseClient();
     const { error } = await supabase.auth.updateUser({
-      data: { myCard: cardData }
+      data: { myCard: normalized }
     });
     if (error) throw error;
+    return { synced: true, error: '' };
   } catch (err) {
     console.warn('Failed to sync myCard to Supabase:', err.message);
+    return { synced: false, error: err.message || 'Failed to sync my card' };
   }
 }
