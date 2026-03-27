@@ -29,11 +29,8 @@ function belongsToActiveUser(record) {
 function getDB() {
   if (!dbPromise) {
     dbPromise = openDB(DB_NAME, DB_VERSION, {
-      upgrade(db, oldVersion) {
-        if (!db.objectStoreNames.contains('myCard')) {
-          db.createObjectStore('myCard');
-        }
-
+      upgrade(db, oldVersion, _newVersion, tx) {
+        // contacts store
         if (!db.objectStoreNames.contains('contacts')) {
           const store = db.createObjectStore('contacts', { keyPath: 'id' });
           store.createIndex('name', 'name');
@@ -41,29 +38,33 @@ function getDB() {
           store.createIndex('createdAt', 'createdAt');
           store.createIndex('userId', 'userId');
         } else if (oldVersion < 2) {
-          const tx = db.transaction('contacts', 'readwrite');
           const store = tx.objectStore('contacts');
           if (!store.indexNames.contains('userId')) {
             store.createIndex('userId', 'userId');
           }
         }
 
+        // myCard store
+        if (!db.objectStoreNames.contains('myCard')) {
+          db.createObjectStore('myCard');
+        }
+
+        // cardImages store
         if (!db.objectStoreNames.contains('cardImages')) {
           const store = db.createObjectStore('cardImages', { keyPath: 'contactId' });
           store.createIndex('userId', 'userId');
         } else if (oldVersion < 2) {
-          const tx = db.transaction('cardImages', 'readwrite');
           const store = tx.objectStore('cardImages');
           if (!store.indexNames.contains('userId')) {
             store.createIndex('userId', 'userId');
           }
         }
 
+        // pendingSync store
         if (!db.objectStoreNames.contains('pendingSync')) {
           const store = db.createObjectStore('pendingSync', { keyPath: 'id', autoIncrement: true });
           store.createIndex('userId', 'userId');
         } else if (oldVersion < 2) {
-          const tx = db.transaction('pendingSync', 'readwrite');
           const store = tx.objectStore('pendingSync');
           if (!store.indexNames.contains('userId')) {
             store.createIndex('userId', 'userId');
