@@ -26,62 +26,68 @@ export async function render(container) {
   const sheetsUrl = localStorage.getItem('sheetsWebAppUrl') || '';
   const activeProviders = getConfiguredActiveProviders();
   const sheetsConfigHtml = `
-    <div class="card mb-16">
-      <h2>Google Sheets Sync</h2>
-      <p class="text-sm text-light mb-8">
-        Connect a Google Sheet to mirror your contacts in real time.
-        <a href="https://docs.cardvault.app/sheets-setup" target="_blank" style="color:var(--color-accent)">Setup guide ↗</a>
-      </p>
-      <div class="form-group">
-        <label class="form-label">Apps Script Web App URL</label>
-        <input class="form-input" id="sheets-url"
-          placeholder="https://script.google.com/macros/s/…/exec"
-          value="${escapeHtmlBasic(sheetsUrl)}">
-      </div>
-      <div class="flex gap-8">
-        <button class="btn btn-secondary" id="sheets-test-btn" style="flex:1">Test Connection</button>
-        <button class="btn btn-primary" id="sheets-save-btn" style="flex:1">Save</button>
-      </div>
-      <p class="text-sm text-light mt-8" id="sheets-status">
-        Status: ${isSheetsConfigured() ? '🟢 Configured' : '⚪ Not configured'}
-      </p>
+    <p class="text-sm text-light mb-8">
+      Connect a Google Sheet to mirror your contacts in real time.
+      <a href="https://docs.cardvault.app/sheets-setup" target="_blank" style="color:var(--color-accent)">Setup guide ↗</a>
+    </p>
+    <div class="form-group">
+      <label class="form-label">Apps Script Web App URL</label>
+      <input class="form-input" id="sheets-url"
+        placeholder="https://script.google.com/macros/s/…/exec"
+        value="${escapeHtmlBasic(sheetsUrl)}">
     </div>
+    <div class="flex gap-8">
+      <button class="btn btn-secondary" id="sheets-test-btn" style="flex:1">Test Connection</button>
+      <button class="btn btn-primary" id="sheets-save-btn" style="flex:1">Save</button>
+    </div>
+    <p class="text-sm text-light mt-8" id="sheets-status">
+      Status: ${isSheetsConfigured() ? '🟢 Configured' : '⚪ Not configured'}
+    </p>
   `;
 
   container.innerHTML = `
     <h1>Settings</h1>
 
-    <div class="card mb-16">
-      <h2>Supabase</h2>
-      <p class="text-sm text-light mb-8">Status: ${isSupabaseConfigured() ? 'Configured' : 'Missing config'} · ${session ? `Signed in as ${escapeHtmlBasic(session.user.email || 'user')}` : 'Signed out'}</p>
-      <div class="form-group">
-        <label class="form-label">Supabase URL</label>
-        <input class="form-input" id="supabase-url" placeholder="https://your-project.supabase.co" value="${escapeHtmlBasic(config.url)}">
+    <details class="card collapsible mb-16">
+      <summary>Supabase</summary>
+      <div class="content">
+        <p class="text-sm text-light mb-8">Status: ${isSupabaseConfigured() ? 'Configured' : 'Missing config'} · ${session ? `Signed in as ${escapeHtmlBasic(session.user.email || 'user')}` : 'Signed out'}</p>
+        <div class="form-group">
+          <label class="form-label">Supabase URL</label>
+          <input class="form-input" id="supabase-url" placeholder="https://your-project.supabase.co" value="${escapeHtmlBasic(config.url)}">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Supabase anon key</label>
+          <textarea class="form-input" id="supabase-anon" rows="4" placeholder="eyJ...">${escapeHtmlBasic(config.anonKey)}</textarea>
+        </div>
+        <div class="flex gap-8">
+          <button class="btn btn-secondary" id="test-btn" style="flex:1">Test Connection</button>
+          <button class="btn btn-primary" id="save-btn" style="flex:1">Save Config</button>
+        </div>
+        ${session ? '<button class="btn btn-secondary btn-block mt-8" id="signout-btn">Sign Out</button>' : ''}
       </div>
-      <div class="form-group">
-        <label class="form-label">Supabase anon key</label>
-        <textarea class="form-input" id="supabase-anon" rows="4" placeholder="eyJ...">${escapeHtmlBasic(config.anonKey)}</textarea>
-      </div>
-      <div class="flex gap-8">
-        <button class="btn btn-secondary" id="test-btn" style="flex:1">Test Connection</button>
-        <button class="btn btn-primary" id="save-btn" style="flex:1">Save Config</button>
-      </div>
-      ${session ? '<button class="btn btn-secondary btn-block mt-8" id="signout-btn">Sign Out</button>' : ''}
-    </div>
+    </details>
 
-    ${sheetsConfigHtml}
-
-    <div class="card mb-16">
-      <h2>Data & Sync</h2>
-      <p class="text-sm text-light">Active providers: <strong>${activeProviders.length ? activeProviders.join(' + ') : 'None'}</strong></p>
-      <p class="text-sm text-light">Pending sync queue: <strong>${pendingCount}</strong></p>
-      <p class="text-sm text-light">Offline cache usage: <strong>${storageMB} MB</strong></p>
-      <div class="flex gap-8 mt-8">
-        <button class="btn btn-secondary" id="export-btn" style="flex:1">Push Local → Active Providers</button>
-        <button class="btn btn-secondary" id="import-btn" style="flex:1">Pull Supabase → Local</button>
+    <details class="card collapsible mb-16">
+      <summary>Google Sheets Sync</summary>
+      <div class="content">
+        ${sheetsConfigHtml}
       </div>
-      <button class="btn btn-secondary btn-block mt-8" id="import-sheets-btn">Pull Sheets → Local</button>
-    </div>
+    </details>
+
+    <details class="card collapsible mb-16">
+      <summary>Data & Sync</summary>
+      <div class="content">
+        <p class="text-sm text-light">Active providers: <strong>${activeProviders.length ? activeProviders.join(' + ') : 'None'}</strong></p>
+        <p class="text-sm text-light">Pending sync queue: <strong>${pendingCount}</strong></p>
+        <p class="text-sm text-light">Offline cache usage: <strong>${storageMB} MB</strong></p>
+        <div class="flex gap-8 mt-8">
+          <button class="btn btn-secondary" id="export-btn" style="flex:1">Push Local → Active Providers</button>
+          <button class="btn btn-secondary" id="import-btn" style="flex:1">Pull Supabase → Local</button>
+        </div>
+        <button class="btn btn-secondary btn-block mt-8" id="import-sheets-btn">Pull Sheets → Local</button>
+      </div>
+    </details>
   `;
 
   container.querySelector('#save-btn').addEventListener('click', () => {
