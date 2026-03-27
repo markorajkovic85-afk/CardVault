@@ -8,6 +8,19 @@ const DB_VERSION = 1;
 
 let dbPromise;
 
+function sanitizeContactForCache(contact) {
+  if (!contact || typeof contact !== 'object') return contact;
+  const sanitized = { ...contact };
+
+  // Heavy fields such as base64 thumbnails significantly slow down
+  // IndexedDB reads when the contact list grows.
+  if ('imageData' in sanitized) {
+    delete sanitized.imageData;
+  }
+
+  return sanitized;
+}
+
 function getDB() {
   if (!dbPromise) {
     dbPromise = openDB(DB_NAME, DB_VERSION, {
@@ -63,7 +76,7 @@ export async function getContact(id) {
 
 export async function saveContact(contact) {
   const db = await getDB();
-  await db.put('contacts', contact);
+  await db.put('contacts', sanitizeContactForCache(contact));
 }
 
 export async function deleteContact(id) {
@@ -74,7 +87,7 @@ export async function deleteContact(id) {
 export async function bulkPutContacts(contacts) {
   const db = await getDB();
   const tx = db.transaction('contacts', 'readwrite');
-  await Promise.all(contacts.map(c => tx.store.put(c)));
+  await Promise.all((contacts || []).map(c => tx.store.put(sanitizeContactForCache(c))));
   await tx.done;
 }
 
@@ -82,7 +95,7 @@ export async function replaceAllContacts(contacts) {
   const db = await getDB();
   const tx = db.transaction('contacts', 'readwrite');
   await tx.store.clear();
-  await Promise.all((contacts || []).map(c => tx.store.put(c)));
+  await Promise.all((contacts || []).map(c => tx.store.put(sanitizeContactForCache(c))));
   await tx.done;
 }
 

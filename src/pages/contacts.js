@@ -10,8 +10,15 @@ let contacts = [];
 let searchQuery = '';
 let sortBy = localStorage.getItem('sortPreference') || 'date';
 
+function toListContact(contact) {
+  if (!contact || typeof contact !== 'object') return contact;
+  const sanitized = { ...contact };
+  delete sanitized.imageData;
+  return sanitized;
+}
+
 export async function render(container) {
-  contacts = await getAllContacts();
+  contacts = (await getAllContacts()).map(toListContact);
   contacts = contacts.filter(c => !c.pendingDelete);
 
   renderList(container);
@@ -40,7 +47,9 @@ export async function render(container) {
         const localOnly = contacts.filter(c => !remoteIds.has(c.id));
 
         // Merge: remote (source of truth for synced) + local-only (not yet synced)
-        const merged = [...remote, ...localOnly].filter(c => !c.pendingDelete);
+        const merged = [...remote, ...localOnly]
+          .map(toListContact)
+          .filter(c => !c.pendingDelete);
 
         await bulkPutContacts(merged);
         contacts = merged;
