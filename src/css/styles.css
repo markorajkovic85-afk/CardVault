@@ -382,15 +382,50 @@ textarea.form-input { resize: vertical; min-height: 80px; }
 .qr-container canvas { border-radius: var(--radius-sm); }
 
 /* ===== Scan Page ===== */
-.scan-preview { width: 100%; aspect-ratio: 16/10; border-radius: var(--radius); overflow: hidden; background: var(--color-primary-dark); position: relative; box-shadow: var(--shadow-lg); }
-.scan-preview video, .scan-preview img { width: 100%; height: 100%; object-fit: cover; }
+/*
+  .scan-preview wraps both the placeholder (before capture) and the
+  card image (after capture). The placeholder uses aspect-ratio 16/10
+  for a landscape camera frame. Once a captured image is inside,
+  the <img> drives the height naturally via object-fit: contain so
+  portrait cards are not cropped or letter-boxed.
+*/
+.scan-preview {
+  width: 100%;
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--color-primary-dark);
+  position: relative;
+  box-shadow: var(--shadow-lg);
+  /* Default frame for the empty/camera state */
+  aspect-ratio: 16 / 10;
+}
+/* When an image is present, let it dictate the height */
+.scan-preview.has-image {
+  aspect-ratio: unset;
+  height: auto;
+}
+.scan-preview video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+/* Portrait and landscape cards both render without cropping */
+.scan-preview img {
+  width: 100%;
+  height: auto;
+  display: block;
+  object-fit: contain;
+  max-height: 60vh;
+}
 .scan-preview::before {
   content: '';
   position: absolute;
   inset: 0;
   pointer-events: none;
   background: radial-gradient(circle at center, transparent 50%, rgba(17, 29, 51, 0.24) 100%);
+  /* Hide vignette overlay when an actual card image is shown */
 }
+.scan-preview.has-image::before { display: none; }
 .scan-preview::after {
   content: '';
   position: absolute;
@@ -399,6 +434,7 @@ textarea.form-input { resize: vertical; min-height: 80px; }
   border-radius: calc(var(--radius) - 4px);
   pointer-events: none;
 }
+.scan-preview.has-image::after { display: none; }
 .scan-actions { display: flex; gap: 12px; margin: 16px 0; }
 .scan-actions .btn { flex: 1; }
 .preview-soft-fade { opacity: 0.88; animation: fadeIn 0.35s ease both; }
@@ -603,14 +639,12 @@ textarea.form-input { resize: vertical; min-height: 80px; }
   box-shadow: var(--shadow);
   border: 1px solid rgba(0,0,0,0.04);
 }
-/* Equal-width export buttons */
 .bento-export-bar .btn {
   min-width: 72px;
   padding: 8px 12px;
   font-size: 0.813rem;
   justify-content: center;
 }
-/* Text block inside export bar */
 .bento-export-bar .export-label {
   min-width: 0;
   overflow: hidden;
@@ -629,7 +663,6 @@ textarea.form-input { resize: vertical; min-height: 80px; }
   color: var(--color-text-light);
   margin: 2px 0 0;
 }
-/* Sheets status badge aligned right */
 .bento-export-bar .sheets-badge {
   display: inline-flex;
   align-items: center;
@@ -656,7 +689,6 @@ textarea.form-input { resize: vertical; min-height: 80px; }
   text-decoration: underline;
   white-space: nowrap;
 }
-/* On very narrow screens stack into 2 rows */
 @media (max-width: 360px) {
   .bento-export-bar {
     grid-template-columns: 1fr 1fr;
@@ -689,132 +721,31 @@ textarea.form-input { resize: vertical; min-height: 80px; }
   color: var(--color-accent);
 }
 
-.stats-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
+.stats-list { list-style: none; margin: 0; padding: 0; }
+.stats-list li { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid rgba(27, 42, 74, 0.08); }
+.stats-list li:last-child { border-bottom: none; }
 
-.stats-list li {
-  display: flex;
-  justify-content: space-between;
-  padding: 8px 0;
-  border-bottom: 1px solid rgba(27, 42, 74, 0.08);
-}
+.trend-chart-wrap { display: flex; flex-direction: column; gap: 4px; }
+.trend-chart-header { font-size: 0.75rem; color: var(--color-text-light); }
+.trend-chart { position: relative; display: flex; align-items: flex-end; gap: 3px; height: 80px; margin-top: 8px; }
+.trend-zero-line { position: absolute; left: 0; right: 0; bottom: 0; border-top: 1px solid rgba(27, 42, 74, 0.14); }
+.trend-axis { display: flex; justify-content: space-between; margin-top: 4px; font-size: 0.625rem; color: var(--color-text-light); }
+.trend-col { flex: 1; min-width: 0; display: flex; align-items: flex-end; }
+.trend-bar-btn { width: 100%; height: 100%; border: none; background: transparent; display: flex; align-items: flex-end; cursor: pointer; padding: 0; }
+.trend-bar { width: 100%; border-radius: 4px 4px 0 0; background: linear-gradient(180deg, var(--color-accent), #dfc47a); }
+.trend-bar-btn.active .trend-bar { background: linear-gradient(180deg, var(--color-primary-light), var(--color-primary)); }
 
-.stats-list li:last-child {
-  border-bottom: none;
-}
-
-.trend-chart-wrap {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.trend-chart-header {
-  font-size: 0.75rem;
-  color: var(--color-text-light);
-}
-
-.trend-chart {
-  position: relative;
-  display: flex;
-  align-items: flex-end;
-  gap: 3px;
-  height: 80px;
-  margin-top: 8px;
-}
-
-.trend-zero-line {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  border-top: 1px solid rgba(27, 42, 74, 0.14);
-}
-
-.trend-axis {
-  display: flex;
-  justify-content: space-between;
-  margin-top: 4px;
-  font-size: 0.625rem;
-  color: var(--color-text-light);
-}
-
-.trend-col {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  align-items: flex-end;
-}
-
-.trend-bar-btn {
-  width: 100%;
-  height: 100%;
-  border: none;
-  background: transparent;
-  display: flex;
-  align-items: flex-end;
-  cursor: pointer;
-  padding: 0;
-}
-
-.trend-bar {
-  width: 100%;
-  border-radius: 4px 4px 0 0;
-  background: linear-gradient(180deg, var(--color-accent), #dfc47a);
-}
-
-.trend-bar-btn.active .trend-bar {
-  background: linear-gradient(180deg, var(--color-primary-light), var(--color-primary));
-}
-.relationship-chip {
-  display: inline-block;
-  background: rgba(201, 168, 76, 0.18);
-  border: 1px solid rgba(201, 168, 76, 0.3);
-  color: var(--color-primary);
-  border-radius: 999px;
-  font-size: 0.75rem;
-  padding: 4px 10px;
-}
-.action-row {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
-}
-.action-pill {
-  min-height: 42px;
-  border-radius: var(--radius-sm);
-  border: 1px solid rgba(27, 42, 74, 0.12);
-  background: var(--color-bg);
-  color: var(--color-primary);
-  font-size: 0.75rem;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 6px;
-}
+.relationship-chip { display: inline-block; background: rgba(201, 168, 76, 0.18); border: 1px solid rgba(201, 168, 76, 0.3); color: var(--color-primary); border-radius: 999px; font-size: 0.75rem; padding: 4px 10px; }
+.action-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.action-pill { min-height: 42px; border-radius: var(--radius-sm); border: 1px solid rgba(27, 42, 74, 0.12); background: var(--color-bg); color: var(--color-primary); font-size: 0.75rem; display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 6px; }
 .action-pill:disabled { opacity: 0.45; }
 .scanned-card-panel { transition: box-shadow var(--transition), border-color var(--transition), transform var(--transition); cursor: zoom-in; }
-.scanned-card-panel.expanded {
-  border-color: rgba(201, 168, 76, 0.7);
-  box-shadow: var(--shadow-card);
-  transform: scale(1.01);
-}
+.scanned-card-panel.expanded { border-color: rgba(201, 168, 76, 0.7); box-shadow: var(--shadow-card); transform: scale(1.01); }
 
 @media (max-width: 560px) {
   .dashboard-bento { grid-template-columns: 1fr; }
-  .bento-trend,
-  .bento-export-bar,
-  .bento-stat,
-  .bento-list { grid-column: span 1; }
-  .bento-export-bar {
-    grid-template-columns: 1fr auto auto;
-  }
-}
-@media (max-width: 560px) {
+  .bento-trend, .bento-export-bar, .bento-stat, .bento-list { grid-column: span 1; }
+  .bento-export-bar { grid-template-columns: 1fr auto auto; }
   .steps { padding-bottom: 4px; }
   .step-label { display: none; }
 }
