@@ -25,6 +25,28 @@ export async function render(container) {
   const session = await getSession();
   const sheetsUrl = localStorage.getItem('sheetsWebAppUrl') || '';
   const activeProviders = getConfiguredActiveProviders();
+  const sheetsConfigHtml = `
+    <div class="card mb-16">
+      <h2>Google Sheets Sync</h2>
+      <p class="text-sm text-light mb-8">
+        Connect a Google Sheet to mirror your contacts in real time.
+        <a href="https://docs.cardvault.app/sheets-setup" target="_blank" style="color:var(--color-accent)">Setup guide ↗</a>
+      </p>
+      <div class="form-group">
+        <label class="form-label">Apps Script Web App URL</label>
+        <input class="form-input" id="sheets-url"
+          placeholder="https://script.google.com/macros/s/…/exec"
+          value="${escapeHtmlBasic(sheetsUrl)}">
+      </div>
+      <div class="flex gap-8">
+        <button class="btn btn-secondary" id="sheets-test-btn" style="flex:1">Test Connection</button>
+        <button class="btn btn-primary" id="sheets-save-btn" style="flex:1">Save</button>
+      </div>
+      <p class="text-sm text-light mt-8" id="sheets-status">
+        Status: ${isSheetsConfigured() ? '🟢 Configured' : '⚪ Not configured'}
+      </p>
+    </div>
+  `;
 
   container.innerHTML = `
     <h1>Settings</h1>
@@ -47,18 +69,7 @@ export async function render(container) {
       ${session ? '<button class="btn btn-secondary btn-block mt-8" id="signout-btn">Sign Out</button>' : ''}
     </div>
 
-    <div class="card mb-16">
-      <h2>Google Sheets</h2>
-      <p class="text-sm text-light mb-8">Status: ${isSheetsConfigured() ? 'Configured' : 'Missing Web App URL'}</p>
-      <div class="form-group">
-        <label class="form-label">Sheets Web App URL</label>
-        <input class="form-input" id="sheets-url" placeholder="https://script.google.com/macros/s/.../exec" value="${escapeHtmlBasic(sheetsUrl)}">
-      </div>
-      <div class="flex gap-8">
-        <button class="btn btn-secondary" id="test-sheets-btn" style="flex:1">Test Sheets</button>
-        <button class="btn btn-primary" id="save-sheets-btn" style="flex:1">Save URL</button>
-      </div>
-    </div>
+    ${sheetsConfigHtml}
 
     <div class="card mb-16">
       <h2>Data & Sync</h2>
@@ -84,14 +95,11 @@ export async function render(container) {
     showToast('Supabase config saved.', 'success');
   });
 
-  container.querySelector('#save-sheets-btn').addEventListener('click', () => {
+  container.querySelector('#sheets-save-btn').addEventListener('click', () => {
     const url = container.querySelector('#sheets-url').value.trim();
-    if (!url) {
-      showToast('Google Sheets Web App URL is required.', 'warning');
-      return;
-    }
     localStorage.setItem('sheetsWebAppUrl', url);
-    showToast('Google Sheets URL saved.', 'success');
+    container.querySelector('#sheets-status').textContent = `Status: ${isSheetsConfigured() ? '🟢 Configured' : '⚪ Not configured'}`;
+    showToast('Sheets URL saved.', 'success', false);
   });
 
   container.querySelector('#test-btn').addEventListener('click', async () => {
@@ -107,16 +115,17 @@ export async function render(container) {
     }
   });
 
-  container.querySelector('#test-sheets-btn').addEventListener('click', async () => {
+  container.querySelector('#sheets-test-btn').addEventListener('click', async () => {
     try {
-      const result = await testProviderConnection('sheets');
+      const { testConnection } = await import('../js/sheets-api.js');
+      const result = await testConnection();
       if (result.success) {
-        showToast(`Sheets OK${result.sheetName ? ` (${result.sheetName})` : ''}.`, 'success');
+        showToast(`Connected: "${result.sheetName}" · ${result.rowCount} rows`, 'success');
       } else {
-        showToast(result.error || 'Sheets connection failed.', 'error');
+        showToast(result.error || 'Connection failed', 'error');
       }
     } catch (error) {
-      showToast(error.message || 'Sheets connection test failed.', 'error');
+      showToast(error.message || 'Connection failed', 'error');
     }
   });
 
