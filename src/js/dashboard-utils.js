@@ -11,6 +11,19 @@ export function buildTopOccasions(rows = []) {
     .map(([occasion, count]) => ({ occasion, count }));
 }
 
+export function buildTopCompanies(rows = []) {
+  const companyCounts = {};
+  rows.forEach((row) => {
+    const key = (row.company || '').trim();
+    if (!key) return;
+    companyCounts[key] = (companyCounts[key] || 0) + 1;
+  });
+  return Object.entries(companyCounts)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([company, count]) => ({ company, count }));
+}
+
 export function buildTrend30Days(rows = [], now = new Date()) {
   const trendStart = new Date(now);
   trendStart.setDate(now.getDate() - 29);

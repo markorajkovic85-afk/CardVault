@@ -1,4 +1,4 @@
-// CardVault — Offline Sync Engine (Supabase)
+// CardVault — Offline Sync Engine (Supabase + Sheets)
 
 import {
   getAllPendingSync,
@@ -8,56 +8,81 @@ import {
   getCardImages,
   saveContact
 } from './db.js';
-import {
-  fetchContactsPage,
-  upsertContact,
-  deleteContactRemote,
-  uploadCardImage
-} from './supabase-api.js';
+import { uploadCardImage } from './supabase-api.js';
 import { isSupabaseConfigured } from './supabase-client.js';
 import { getSession } from './supabase-auth.js';
+import {
+  addContactToProvider,
+  updateContactInProvider,
+  deleteContactFromProvider,
+  fetchContactsFromProvider,
+  getConfiguredActiveProviders
+} from './remote-sync-api.js';
 import { showToast } from '../components/toast.js';
 
-async function syncSingleAction(action, contactId, data) {
-  if (action === 'delete') {
-    await deleteContactRemote(contactId);
-    return;
+function canUseProvider(provider, session) {
+  if (provider === 'supabase') return isSupabaseConfigured() && Boolean(session);
+  if (provider === 'sheets') return true;
+  return false;
+}
+
+async function syncSingleAction(action, contactId, data, targets = []) {
+  const normalizedTargets = (targets || []).length ? targets : getConfiguredActiveProviders();
+
+  if (normalizedTargets.length === 0) {
+    throw new Error('No sync providers configured');
   }
 
-  const contact = { ...(data || {}) };
-  if (!contact?.id) return;
+  for (const provider of normalizedTargets) {
+    if (action === 'delete') {
+      await deleteContactFromProvider(provider, contactId);
+      continue;
+    }
 
-  const imageRecord = await getCardImages(contact.id);
-  if (imageRecord?.front && !contact.frontImagePath) {
-    contact.frontImagePath = await uploadCardImage(contact.id, 'front', imageRecord.front);
-  }
-  if (imageRecord?.back && !contact.backImagePath) {
-    contact.backImagePath = await uploadCardImage(contact.id, 'back', imageRecord.back);
-  }
+    const contact = { ...(data || {}) };
+    if (!contact?.id) continue;
 
-  const saved = await upsertContact(contact);
-  await saveContact(saved);
+    if (provider === 'supabase') {
+      const imageRecord = await getCardImages(contact.id);
+      if (imageRecord?.front && !contact.frontImagePath) {
+        contact.frontImagePath = await uploadCardImage(contact.id, 'front', imageRecord.front);
+      }
+      if (imageRecord?.back && !contact.backImagePath) {
+        contact.backImagePath = await uploadCardImage(contact.id, 'back', imageRecord.back);
+      }
+    }
+
+    const saved = action === 'update'
+      ? await updateContactInProvider(provider, contact)
+      : await addContactToProvider(provider, contact);
+
+    if (provider === 'supabase' && saved) {
+      await saveContact(saved);
+    }
+  }
 }
 
 async function queueOrSync(action, contactId, data = null) {
   const { addPendingSync } = await import('./db.js');
   const session = await getSession();
+  const activeProviders = getConfiguredActiveProviders();
+  const availableProviders = activeProviders.filter((provider) => canUseProvider(provider, session));
 
-  if (!isSupabaseConfigured() || !session) {
-    await addPendingSync(action, contactId, data, ['supabase']);
+  if (availableProviders.length === 0) {
+    await addPendingSync(action, contactId, data, activeProviders);
     return { synced: false, reason: 'auth/config missing' };
   }
 
   if (!navigator.onLine) {
-    await addPendingSync(action, contactId, data, ['supabase']);
+    await addPendingSync(action, contactId, data, availableProviders);
     return { synced: false, reason: 'offline' };
   }
 
   try {
-    await syncSingleAction(action, contactId, data);
+    await syncSingleAction(action, contactId, data, availableProviders);
     return { synced: true, reason: '' };
   } catch (error) {
-    await addPendingSync(action, contactId, data, ['supabase']);
+    await addPendingSync(action, contactId, data, availableProviders);
     return { synced: false, reason: error.message || 'sync failed' };
   }
 }
@@ -88,31 +113,25 @@ export async function exportAllToActiveBackends() {
   return { total: contacts.length, exported, failed };
 }
 
-export async function importContactsFromProvider(_provider, replaceLocal = true) {
+export async function importContactsFromProvider(provider = 'supabase', replaceLocal = true) {
   if (!navigator.onLine) throw new Error('Device is offline');
 
-  const all = [];
-  let page = 1;
-  let hasMore = true;
-
-  while (hasMore) {
-    const res = await fetchContactsPage({ page, pageSize: 200 });
-    all.push(...res.contacts);
-    hasMore = all.length < res.total;
-    page += 1;
-  }
-
+  const all = await fetchContactsFromProvider(provider);
   if (replaceLocal) {
     await replaceAllContacts(all);
   }
 
-  return { imported: all.length, replaceLocal };
+  return { imported: all.length, replaceLocal, provider };
 }
 
 export async function flushSyncQueue() {
-  if (!navigator.onLine || !isSupabaseConfigured()) return;
+  if (!navigator.onLine) return;
   const session = await getSession();
-  if (!session) return;
+  const activeProviders = getConfiguredActiveProviders();
+  if (activeProviders.length === 0) return;
+
+  const availableProviders = activeProviders.filter((provider) => canUseProvider(provider, session));
+  if (availableProviders.length === 0) return;
 
   const pending = await getAllPendingSync();
   if (pending.length === 0) return;
@@ -122,10 +141,12 @@ export async function flushSyncQueue() {
 
   for (const item of pending) {
     try {
-      await syncSingleAction(item.action, item.contactId, item.data);
+      const targets = (item.targets || []).length ? item.targets : availableProviders;
+      const filteredTargets = targets.filter((provider) => availableProviders.includes(provider));
+      await syncSingleAction(item.action, item.contactId, item.data, filteredTargets);
       await deletePendingSync(item.id);
       synced += 1;
-    } catch (error) {
+    } catch (_error) {
       failed += 1;
     }
   }
@@ -144,5 +165,6 @@ export async function getPendingSyncCount() {
 }
 
 export function getSyncModeLabel() {
-  return 'Supabase';
+  const providers = getConfiguredActiveProviders();
+  return providers.length > 0 ? providers.join(' + ') : 'No provider configured';
 }

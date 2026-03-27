@@ -1,36 +1,54 @@
 import { isSupabaseConfigured } from './supabase-client.js';
 import { getSession } from './supabase-auth.js';
-import { fetchContactsPage, upsertContact, deleteContactRemote } from './supabase-api.js';
+import {
+  fetchContactsPage,
+  upsertContact,
+  deleteContactRemote
+} from './supabase-api.js';
+import {
+  testConnection as testSheetsConnection,
+  fetchContacts as fetchSheetsContacts,
+  addContact as addContactToSheets,
+  updateContactInSheets,
+  deleteContactFromSheets,
+  isConfigured as isSheetsConfigured
+} from './sheets-api.js';
 
 export function getSyncMode() {
-  return 'supabase';
+  return 'multi';
 }
 
 export function setSyncMode() {
-  return 'supabase';
+  return 'multi';
 }
 
 export function getProviderLabel() {
-  return 'Supabase';
+  const providers = getConfiguredActiveProviders();
+  return providers.length > 0 ? providers.join(' + ') : 'None';
 }
 
 export function getActiveProviders() {
-  return ['supabase'];
+  return ['supabase', 'sheets'];
 }
 
-export function isProviderConfigured() {
+export function isProviderConfigured(provider) {
+  if (provider === 'sheets') return isSheetsConfigured();
   return isSupabaseConfigured();
 }
 
 export function getConfiguredActiveProviders() {
-  return isSupabaseConfigured() ? ['supabase'] : [];
+  return getActiveProviders().filter((provider) => isProviderConfigured(provider));
 }
 
 export function isSyncConfigured() {
-  return isSupabaseConfigured();
+  return getConfiguredActiveProviders().length > 0;
 }
 
-export async function testProviderConnection() {
+export async function testProviderConnection(provider = 'supabase') {
+  if (provider === 'sheets') {
+    return testSheetsConnection();
+  }
+
   if (!isSupabaseConfigured()) {
     return { success: false, error: 'Supabase URL and anon key are required.' };
   }
@@ -47,25 +65,41 @@ export async function testProviderConnection() {
   }
 }
 
-export async function fetchContactsFromProvider() {
+export async function fetchContactsFromProvider(provider = 'supabase') {
+  if (provider === 'sheets') {
+    return fetchSheetsContacts();
+  }
+
   const result = await fetchContactsPage({ page: 1, pageSize: 500 });
   return result.contacts;
 }
 
-export async function addContactToProvider(_provider, contact) {
+export async function addContactToProvider(provider = 'supabase', contact) {
+  if (provider === 'sheets') {
+    return addContactToSheets(contact);
+  }
   return upsertContact(contact);
 }
 
-export async function updateContactInProvider(_provider, contact) {
+export async function updateContactInProvider(provider = 'supabase', contact) {
+  if (provider === 'sheets') {
+    return updateContactInSheets(contact);
+  }
   return upsertContact(contact);
 }
 
-export async function deleteContactFromProvider(_provider, contactId) {
+export async function deleteContactFromProvider(provider = 'supabase', contactId) {
+  if (provider === 'sheets') {
+    return deleteContactFromSheets(contactId);
+  }
   return deleteContactRemote(contactId);
 }
 
 export async function fetchContactsFromActiveProviders() {
-  if (!isSupabaseConfigured()) return [];
-  const result = await fetchContactsPage({ page: 1, pageSize: 500 });
-  return result.contacts;
+  const providers = getConfiguredActiveProviders();
+  if (providers.length === 0) return [];
+
+  const all = await Promise.allSettled(providers.map((provider) => fetchContactsFromProvider(provider)));
+  const firstSuccess = all.find((result) => result.status === 'fulfilled');
+  return firstSuccess?.value || [];
 }

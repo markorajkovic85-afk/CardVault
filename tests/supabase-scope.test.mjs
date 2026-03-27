@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { toScopedContactPayload } from '../src/js/contact-scope.js';
-import { buildTopOccasions, buildTrend30Days } from '../src/js/dashboard-utils.js';
+import { buildTopCompanies, buildTopOccasions, buildTrend30Days } from '../src/js/dashboard-utils.js';
 
 test('toScopedContactPayload always scopes to user_id', () => {
   const payload = toScopedContactPayload({ id: 'abc', name: 'Taylor', user_id: 'ignored' }, 'user-123');
@@ -14,6 +14,16 @@ test('buildTopOccasions returns top 5 sorted', () => {
     { occasion: 'Expo' }, { occasion: 'Expo' }, { occasion: 'Meetup' }, { occasion: 'Coffee' }
   ]);
   assert.equal(top[0].occasion, 'Expo');
+  assert.equal(top[0].count, 2);
+  assert.ok(top.length <= 5);
+});
+
+
+test('buildTopCompanies returns top 5 sorted', () => {
+  const top = buildTopCompanies([
+    { company: 'Acme' }, { company: 'Acme' }, { company: 'Beta' }, { company: 'Gamma' }
+  ]);
+  assert.equal(top[0].company, 'Acme');
   assert.equal(top[0].count, 2);
   assert.ok(top.length <= 5);
 });

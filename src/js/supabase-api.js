@@ -2,7 +2,7 @@
 
 import { getSupabaseClient } from './supabase-client.js';
 import { toScopedContactPayload } from './contact-scope.js';
-import { buildTopOccasions, buildTrend30Days } from './dashboard-utils.js';
+import { buildTopCompanies, buildTopOccasions, buildTrend30Days } from './dashboard-utils.js';
 
 function getActiveUserId() {
   return localStorage.getItem('cardvault.activeUserId') || '';
@@ -134,16 +134,19 @@ export async function getDashboardStats() {
     return {
       totalContacts: 0,
       contactsThisWeek: 0,
+      contactsLastWeek: 0,
       contactsThisMonth: 0,
       distinctCompanies: 0,
       topOccasions: [],
+      topCompanies: [],
+      recentContacts: [],
       trend30Days: buildTrend30Days([])
     };
   }
 
   const { data: rows, error } = await supabase
     .from('contacts')
-    .select('company, occasion, created_at')
+    .select('name, email, company, occasion, created_at')
     .order('created_at', { ascending: false });
 
   if (error) throw error;
@@ -151,6 +154,12 @@ export async function getDashboardStats() {
   const now = new Date();
   const weekAgo = new Date(now);
   weekAgo.setDate(now.getDate() - 7);
+
+  const twoWeeksAgo = new Date(now);
+  twoWeeksAgo.setDate(now.getDate() - 14);
+
+  const lastWeekStart = new Date(now);
+  lastWeekStart.setDate(now.getDate() - 7);
 
   const monthAgo = new Date(now);
   monthAgo.setMonth(now.getMonth() - 1);
@@ -162,12 +171,30 @@ export async function getDashboardStats() {
       .filter(Boolean)
   );
 
+  const createdDate = (row) => new Date(row.created_at);
+  const thisWeekContacts = safeRows.filter((row) => createdDate(row) >= weekAgo);
+  const lastWeekContacts = safeRows.filter((row) => {
+    const created = createdDate(row);
+    return created >= twoWeeksAgo && created < lastWeekStart;
+  });
+
   return {
     totalContacts: safeRows.length,
-    contactsThisWeek: safeRows.filter((row) => new Date(row.created_at) >= weekAgo).length,
-    contactsThisMonth: safeRows.filter((row) => new Date(row.created_at) >= monthAgo).length,
+    contactsThisWeek: thisWeekContacts.length,
+    contactsLastWeek: lastWeekContacts.length,
+    contactsThisMonth: safeRows.filter((row) => createdDate(row) >= monthAgo).length,
     distinctCompanies: companies.size,
     topOccasions: buildTopOccasions(safeRows),
+    topCompanies: buildTopCompanies(safeRows),
+    recentContacts: safeRows
+      .filter((row) => row.name || row.email)
+      .slice(0, 5)
+      .map((row) => ({
+        name: row.name || 'Unknown',
+        email: row.email || '',
+        company: row.company || '',
+        created_at: row.created_at
+      })),
     trend30Days: buildTrend30Days(safeRows, now)
   };
 }
