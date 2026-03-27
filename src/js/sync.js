@@ -1,136 +1,118 @@
-// CardVault — Offline Sync Engine
+// CardVault — Offline Sync Engine (Supabase)
 
-import { getAllPendingSync, deletePendingSync, updatePendingSync, getAllContacts, bulkPutContacts, replaceAllContacts, saveContact } from './db.js';
 import {
-  addContactToProvider,
-  deleteContactFromProvider,
-  updateContactInProvider,
-  isSyncConfigured,
-  getConfiguredActiveProviders,
-  fetchContactsFromProvider,
-  getProviderLabel,
-  getSyncMode
-} from './remote-sync-api.js';
+  getAllPendingSync,
+  deletePendingSync,
+  getAllContacts,
+  replaceAllContacts,
+  getCardImages,
+  saveContact
+} from './db.js';
+import {
+  fetchContactsPage,
+  upsertContact,
+  deleteContactRemote,
+  uploadCardImage
+} from './supabase-api.js';
+import { isSupabaseConfigured } from './supabase-client.js';
+import { getSession } from './supabase-auth.js';
 import { showToast } from '../components/toast.js';
 
-function wait(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
+async function syncSingleAction(action, contactId, data) {
+  if (action === 'delete') {
+    await deleteContactRemote(contactId);
+    return;
+  }
+
+  const contact = { ...(data || {}) };
+  if (!contact?.id) return;
+
+  const imageRecord = await getCardImages(contact.id);
+  if (imageRecord?.front && !contact.frontImagePath) {
+    contact.frontImagePath = await uploadCardImage(contact.id, 'front', imageRecord.front);
+  }
+  if (imageRecord?.back && !contact.backImagePath) {
+    contact.backImagePath = await uploadCardImage(contact.id, 'back', imageRecord.back);
+  }
+
+  const saved = await upsertContact(contact);
+  await saveContact(saved);
 }
 
-async function syncToTargets(action, contactId, data, requestedTargets = null) {
+async function queueOrSync(action, contactId, data = null) {
   const { addPendingSync } = await import('./db.js');
+  const session = await getSession();
 
-  const targets = (requestedTargets && requestedTargets.length > 0)
-    ? requestedTargets
-    : getConfiguredActiveProviders();
-
-  if (targets.length === 0) {
-    return { synced: false, reason: 'not configured', syncedTargets: [], failedTargets: [] };
+  if (!isSupabaseConfigured() || !session) {
+    await addPendingSync(action, contactId, data, ['supabase']);
+    return { synced: false, reason: 'auth/config missing' };
   }
 
   if (!navigator.onLine) {
-    await addPendingSync(action, contactId, data, targets);
-    return { synced: false, reason: 'offline', syncedTargets: [], failedTargets: targets };
+    await addPendingSync(action, contactId, data, ['supabase']);
+    return { synced: false, reason: 'offline' };
   }
 
-  const failedTargets = [];
-  const syncedTargets = [];
-
-  for (const provider of targets) {
-    try {
-      let response;
-      if (action === 'add') response = await addContactToProvider(provider, data);
-      if (action === 'update') response = await updateContactInProvider(provider, data);
-      if (action === 'delete') response = await deleteContactFromProvider(provider, contactId);
-
-      if (provider === 'notion' && data && response?.notionPageId) {
-        await saveContact({ ...data, notionPageId: response.notionPageId });
-      }
-
-      syncedTargets.push(provider);
-    } catch (err) {
-      console.warn(`Sync ${action} failed for ${provider}:`, err);
-      failedTargets.push(provider);
-    }
+  try {
+    await syncSingleAction(action, contactId, data);
+    return { synced: true, reason: '' };
+  } catch (error) {
+    await addPendingSync(action, contactId, data, ['supabase']);
+    return { synced: false, reason: error.message || 'sync failed' };
   }
-
-  if (failedTargets.length > 0) {
-    await addPendingSync(action, contactId, data, failedTargets);
-  }
-
-  return {
-    synced: failedTargets.length === 0,
-    reason: failedTargets.length === 0 ? '' : 'partial failure',
-    syncedTargets,
-    failedTargets
-  };
 }
 
-/**
- * Try to sync a contact to the active backend(s). If offline or not configured, queue it.
- */
 export async function syncContact(contact) {
-  return syncToTargets('add', contact.id, contact);
+  return queueOrSync('add', contact.id, contact);
 }
 
-/**
- * Try to delete a contact from active backend(s). If offline, queue it.
- */
-export async function syncDelete(contactId) {
-  return syncToTargets('delete', contactId, null);
-}
-
-/**
- * Try to update a contact in active backend(s). If offline, queue it.
- */
 export async function syncUpdate(contact) {
-  return syncToTargets('update', contact.id, contact);
+  return queueOrSync('update', contact.id, contact);
 }
 
-/**
- * Export local contacts to active backend(s), sequentially to avoid rate-limit spikes.
- */
-export async function exportAllToActiveBackends() {
-  if (!navigator.onLine) throw new Error('Device is offline');
-  if (!isSyncConfigured()) throw new Error('No backend configured');
+export async function syncDelete(contactId) {
+  return queueOrSync('delete', contactId, null);
+}
 
-  const contacts = (await getAllContacts()).filter(c => !c.pendingDelete);
+export async function exportAllToActiveBackends() {
+  const contacts = (await getAllContacts()).filter((c) => !c.pendingDelete);
   let exported = 0;
   let failed = 0;
 
   for (const contact of contacts) {
-    const result = await syncToTargets('add', contact.id, contact);
-    if (result.synced) exported++;
-    else failed++;
-    await wait(getSyncMode() === 'both' ? 300 : 180);
+    const result = await queueOrSync('add', contact.id, contact);
+    if (result.synced) exported += 1;
+    else failed += 1;
   }
 
   return { total: contacts.length, exported, failed };
 }
 
-/**
- * Import contacts from one provider and merge or replace local data.
- */
-export async function importContactsFromProvider(provider, replaceLocal = false) {
+export async function importContactsFromProvider(_provider, replaceLocal = true) {
   if (!navigator.onLine) throw new Error('Device is offline');
 
-  const remote = await fetchContactsFromProvider(provider);
-  if (!Array.isArray(remote)) throw new Error('Invalid remote response');
+  const all = [];
+  let page = 1;
+  let hasMore = true;
 
-  if (replaceLocal) {
-    await replaceAllContacts(remote);
-  } else {
-    await bulkPutContacts(remote);
+  while (hasMore) {
+    const res = await fetchContactsPage({ page, pageSize: 200 });
+    all.push(...res.contacts);
+    hasMore = all.length < res.total;
+    page += 1;
   }
 
-  return { imported: remote.length, replaceLocal };
+  if (replaceLocal) {
+    await replaceAllContacts(all);
+  }
+
+  return { imported: all.length, replaceLocal };
 }
 
-/**
- * Flush all pending sync operations
- */
 export async function flushSyncQueue() {
-  if (!navigator.onLine || !isSyncConfigured()) return;
+  if (!navigator.onLine || !isSupabaseConfigured()) return;
+  const session = await getSession();
+  if (!session) return;
 
   const pending = await getAllPendingSync();
   if (pending.length === 0) return;
@@ -139,21 +121,12 @@ export async function flushSyncQueue() {
   let failed = 0;
 
   for (const item of pending) {
-    const targets = (item.targets && item.targets.length > 0)
-      ? item.targets
-      : getConfiguredActiveProviders();
-
-    const result = await syncToTargets(item.action, item.contactId, item.data, targets);
-
-    if (result.failedTargets.length === 0) {
+    try {
+      await syncSingleAction(item.action, item.contactId, item.data);
       await deletePendingSync(item.id);
-      synced++;
-    } else if (result.syncedTargets.length > 0) {
-      await updatePendingSync(item.id, { targets: result.failedTargets });
-      synced++;
-      failed++;
-    } else {
-      failed++;
+      synced += 1;
+    } catch (error) {
+      failed += 1;
     }
   }
 
@@ -165,16 +138,11 @@ export async function flushSyncQueue() {
   }
 }
 
-/**
- * Get count of pending sync items
- */
 export async function getPendingSyncCount() {
   const pending = await getAllPendingSync();
   return pending.length;
 }
 
 export function getSyncModeLabel() {
-  const mode = getSyncMode();
-  if (mode === 'both') return `${getProviderLabel('sheets')} + ${getProviderLabel('notion')}`;
-  return getProviderLabel(mode);
+  return 'Supabase';
 }

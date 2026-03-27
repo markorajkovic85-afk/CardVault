@@ -2,6 +2,7 @@
 
 import { getContact, getCardImages, saveContact } from '../js/db.js';
 import { syncUpdate } from '../js/sync.js';
+import { fetchContactById, getSignedImageUrl } from '../js/supabase-api.js';
 import { showToast } from '../components/toast.js';
 import { escapeHtml, formatDate } from '../js/utils.js';
 
@@ -13,12 +14,11 @@ const EDIT_FIELDS = [
   { key: 'phone', label: 'Phone', type: 'tel' },
   { key: 'website', label: 'Website', type: 'url' },
   { key: 'occasion', label: 'Where I Met Them', type: 'text' },
-  { key: 'notes', label: 'Notes', type: 'textarea' },
+  { key: 'notes', label: 'Notes', type: 'textarea' }
 ];
 
 let contact = null;
 let images = null;
-let editing = false;
 
 export async function render(container, { id }) {
   if (!id) {
@@ -27,13 +27,38 @@ export async function render(container, { id }) {
   }
 
   contact = await getContact(id);
+
+  if (!contact && navigator.onLine) {
+    try {
+      contact = await fetchContactById(id);
+      if (contact) await saveContact(contact);
+    } catch (error) {
+      console.warn('Remote contact fetch failed:', error);
+    }
+  }
+
   if (!contact) {
     container.innerHTML = '<div class="empty-state"><p>Contact not found</p></div>';
     return;
   }
 
   images = await getCardImages(id);
-  editing = false;
+
+  if (navigator.onLine) {
+    try {
+      if (contact.frontImagePath) {
+        const frontSigned = await getSignedImageUrl(contact.frontImagePath);
+        images = { ...(images || {}), front: frontSigned };
+      }
+      if (contact.backImagePath) {
+        const backSigned = await getSignedImageUrl(contact.backImagePath);
+        images = { ...(images || {}), back: backSigned };
+      }
+    } catch (error) {
+      console.warn('Failed to fetch signed URL:', error);
+    }
+  }
+
   renderView(container);
 }
 
@@ -67,14 +92,8 @@ function renderView(container) {
     ${images ? `
       <div class="card">
         <h3>Scanned Card</h3>
-        ${images.front ? `
-          <p class="text-sm text-light mb-8">Front</p>
-          <img src="${images.front}" alt="Card front" style="width:100%;border-radius:var(--radius-sm);margin-bottom:12px;">
-        ` : ''}
-        ${images.back ? `
-          <p class="text-sm text-light mb-8">Back</p>
-          <img src="${images.back}" alt="Card back" style="width:100%;border-radius:var(--radius-sm);">
-        ` : ''}
+        ${images.front ? `<p class="text-sm text-light mb-8">Front</p><img src="${images.front}" alt="Card front" style="width:100%;border-radius:var(--radius-sm);margin-bottom:12px;">` : ''}
+        ${images.back ? `<p class="text-sm text-light mb-8">Back</p><img src="${images.back}" alt="Card back" style="width:100%;border-radius:var(--radius-sm);">` : ''}
       </div>
     ` : ''}
 
@@ -84,14 +103,8 @@ function renderView(container) {
     </p>
   `;
 
-  container.querySelector('#back-btn').addEventListener('click', () => {
-    location.hash = '#/contacts';
-  });
-
-  container.querySelector('#edit-btn').addEventListener('click', () => {
-    editing = true;
-    renderEdit(container);
-  });
+  container.querySelector('#back-btn').addEventListener('click', () => { location.hash = '#/contacts'; });
+  container.querySelector('#edit-btn').addEventListener('click', () => { renderEdit(container); });
 }
 
 function renderEdit(container) {
@@ -104,7 +117,7 @@ function renderEdit(container) {
     </div>
 
     <div class="card">
-      ${EDIT_FIELDS.map(f => `
+      ${EDIT_FIELDS.map((f) => `
         <div class="form-group">
           <label class="form-label">${f.label}</label>
           ${f.type === 'textarea'
@@ -121,15 +134,12 @@ function renderEdit(container) {
     </div>
   `;
 
-  container.querySelector('#cancel-btn').addEventListener('click', () => {
-    editing = false;
-    renderView(container);
-  });
+  container.querySelector('#cancel-btn').addEventListener('click', () => renderView(container));
 
   container.querySelector('#save-btn').addEventListener('click', async () => {
     const updated = { ...contact };
 
-    EDIT_FIELDS.forEach(f => {
+    EDIT_FIELDS.forEach((f) => {
       const el = f.type === 'textarea'
         ? container.querySelector(`textarea[name="${f.key}"]`)
         : container.querySelector(`input[name="${f.key}"]`);
@@ -141,20 +151,13 @@ function renderEdit(container) {
 
     updated.updatedAt = new Date().toISOString();
 
-    // Save to IndexedDB
     await saveContact(updated);
     contact = updated;
 
-    // Sync to Sheets (or queue if offline)
     const result = await syncUpdate(updated);
+    if (result.synced) showToast('Contact updated & synced!', 'success', false);
+    else showToast('Updated locally. Will sync when online.', 'warning', false);
 
-    if (result.synced) {
-      showToast('Contact updated & synced!', 'success', false);
-    } else {
-      showToast('Updated locally. Will sync when online.', 'warning', false);
-    }
-
-    editing = false;
     renderView(container);
   });
 }
