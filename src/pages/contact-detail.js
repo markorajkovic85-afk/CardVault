@@ -109,7 +109,7 @@ function renderView(container) {
         <h3>Context</h3>
         ${c.occasion ? `<p><strong>Met at:</strong> ${escapeHtml(c.occasion)}</p>` : ''}
         ${c.date ? `<p><strong>Date:</strong> ${formatDate(c.date)}</p>` : ''}
-        ${c.notes ? `<p><strong>Notes:</strong> ${escapeHtml(c.notes)}</p>` : ''}
+        ${c.notes ? `<p><strong>Notes:</strong><br><span style="white-space:pre-wrap">${escapeHtml(c.notes)}</span></p>` : ''}
         <a href="#/contact/${c.id}" class="text-sm">Quick follow-up templates</a>
       </div>
     ` : ''}
@@ -126,7 +126,52 @@ function renderView(container) {
   container.querySelector('#back-btn').addEventListener('click', () => { location.hash = '#/contacts'; });
   container.querySelector('#edit-btn').addEventListener('click', () => { renderEdit(container); });
   container.querySelector('#follow-up-note-btn')?.addEventListener('click', () => {
-    showToast('Follow-up note templates coming soon.', 'info', false);
+    const overlay = document.createElement('div');
+    overlay.className = 'sheet-overlay';
+    overlay.innerHTML = `
+      <div class="sheet" role="dialog" aria-label="Add follow-up note">
+        <h3 style="margin:0 0 12px">Add follow-up note</h3>
+        <textarea
+          id="note-input"
+          class="form-input"
+          rows="4"
+          placeholder="e.g. Follow up about proposal next week…"
+          style="resize:none"
+        ></textarea>
+        <div class="flex gap-8 mt-16">
+          <button class="btn btn-secondary" id="note-cancel" style="flex:1">Cancel</button>
+          <button class="btn btn-primary" id="note-save" style="flex:1">Save note</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    overlay.querySelector('#note-input')?.focus();
+
+    const closeSheet = () => overlay.remove();
+    overlay.querySelector('#note-cancel')?.addEventListener('click', closeSheet);
+    overlay.addEventListener('click', (event) => {
+      if (event.target === overlay) closeSheet();
+    });
+
+    overlay.querySelector('#note-save')?.addEventListener('click', async () => {
+      const text = overlay.querySelector('#note-input')?.value.trim();
+      if (!text) return;
+
+      const timestamp = new Date().toLocaleDateString('en-GB');
+      const newEntry = `[${timestamp}] ${text}`;
+      const newNote = contact.notes
+        ? `${contact.notes}\n\n${newEntry}`
+        : newEntry;
+      const updated = { ...contact, notes: newNote, updatedAt: new Date().toISOString() };
+
+      await saveContact(updated);
+      contact = updated;
+      await syncUpdate(updated);
+
+      closeSheet();
+      renderView(container);
+      showToast('Note added.', 'success', false);
+    });
   });
   container.querySelector('#scanned-card-panel')?.addEventListener('click', () => {
     container.querySelector('#scanned-card-panel').classList.toggle('expanded');
