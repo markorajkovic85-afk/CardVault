@@ -43,7 +43,7 @@ export async function render(container) {
         await signInWithEmail(email, password);
         showToast('Signed in successfully.', 'success', false);
       }
-      location.hash = '#/contacts';
+      location.hash = '#/my-card';
     } catch (error) {
       showToast(error.message || 'Authentication failed.', 'error');
     }

@@ -75,7 +75,7 @@ onAuthStateChange((_event, session) => {
     return;
   }
   if (session && (location.hash === '#/login' || location.hash === '')) {
-    location.hash = '#/contacts';
+    location.hash = '#/my-card';
   }
 });
 
