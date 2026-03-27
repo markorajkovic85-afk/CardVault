@@ -10,6 +10,15 @@ import { escapeHtml, formatDate, getInitials, debounce } from '../js/utils.js';
 let contacts = [];
 let searchQuery = '';
 let sortBy = localStorage.getItem('sortPreference') || 'date';
+let activeFilters = {
+  occasion: '',
+  company: '',
+  hasEmail: false,
+  hasPhone: false,
+  dateFrom: '',
+  dateTo: '',
+};
+let filtersOpen = false;
 let currentPage = 1;
 let totalRemote = 0;
 const PAGE_SIZE = 50;
@@ -66,17 +75,91 @@ async function loadRemotePage(container, page, replaceExisting = false) {
 function renderList(container) {
   const filtered = filterAndSort(contacts);
   const canLoadMore = contacts.length < totalRemote;
+  const activeCount = countActiveFilters();
+  const occasions = getUniqueValues(contacts, 'occasion');
+  const companies = getUniqueValues(contacts, 'company');
 
   container.innerHTML = `
-    <h1>Contacts</h1>
-    <div class="search-container" style="position:relative;">
-      <span class="search-icon" style="position:absolute;left:14px;top:50%;transform:translateY(-50%);"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></span>
-      <input class="search-input" type="text" placeholder="Search by name, company, or event..."
-        value="${escapeHtml(searchQuery)}" id="search-input">
-      <div class="sort-controls">
-        <button class="sort-btn ${sortBy === 'date' ? 'active' : ''}" data-sort="date">Date</button>
-        <button class="sort-btn ${sortBy === 'name' ? 'active' : ''}" data-sort="name">Name</button>
-        <button class="sort-btn ${sortBy === 'company' ? 'active' : ''}" data-sort="company">Company</button>
+    <div class="contacts-header">
+      <h1>Contacts <span class="contact-count">${filtered.length}</span></h1>
+    </div>
+
+    <div class="search-row">
+      <div class="search-container" style="position:relative;flex:1">
+        <span class="search-icon" style="position:absolute;left:14px;top:50%;transform:translateY(-50%);"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></span>
+        <input class="search-input" type="text" placeholder="Search name, company, event…"
+          value="${escapeHtml(searchQuery)}" id="search-input">
+        ${searchQuery ? `
+          <button class="search-clear" id="search-clear-btn" aria-label="Clear search">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        ` : ''}
+      </div>
+
+      <button class="btn btn-secondary filter-toggle-btn" id="filter-toggle-btn"
+        aria-expanded="${filtersOpen}" aria-controls="filter-panel">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="6" x2="20" y2="6"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="11" y1="18" x2="13" y2="18"/></svg>
+        Filter
+        ${activeCount > 0 ? `<span class="filter-badge">${activeCount}</span>` : ''}
+      </button>
+    </div>
+
+    <div class="sort-controls">
+      <button class="sort-btn ${sortBy === 'date' ? 'active' : ''}" data-sort="date">Date</button>
+      <button class="sort-btn ${sortBy === 'name' ? 'active' : ''}" data-sort="name">Name</button>
+      <button class="sort-btn ${sortBy === 'company' ? 'active' : ''}" data-sort="company">Company</button>
+    </div>
+
+    ${activeCount > 0 ? `
+      <div class="active-filters-row" id="active-filters-row">
+        ${activeFilters.occasion ? `<span class="filter-pill" data-reset="occasion">Event: ${escapeHtml(activeFilters.occasion)} ✕</span>` : ''}
+        ${activeFilters.company ? `<span class="filter-pill" data-reset="company">Company: ${escapeHtml(activeFilters.company)} ✕</span>` : ''}
+        ${activeFilters.hasEmail ? '<span class="filter-pill" data-reset="hasEmail">Has email ✕</span>' : ''}
+        ${activeFilters.hasPhone ? '<span class="filter-pill" data-reset="hasPhone">Has phone ✕</span>' : ''}
+        ${activeFilters.dateFrom ? `<span class="filter-pill" data-reset="dateFrom">From: ${activeFilters.dateFrom} ✕</span>` : ''}
+        ${activeFilters.dateTo ? `<span class="filter-pill" data-reset="dateTo">To: ${activeFilters.dateTo} ✕</span>` : ''}
+        <button class="filter-reset-all" id="reset-all-btn">Reset all</button>
+      </div>
+    ` : ''}
+
+    <div id="filter-panel" class="filter-panel ${filtersOpen ? 'open' : ''}">
+      <div class="filter-panel-inner">
+        <div class="filter-group">
+          <label class="filter-label">Event / Occasion</label>
+          <select class="form-input" id="filter-occasion">
+            <option value="">All events</option>
+            ${occasions.map((o) => `<option value="${escapeHtml(o)}" ${activeFilters.occasion === o ? 'selected' : ''}>${escapeHtml(o)}</option>`).join('')}
+          </select>
+        </div>
+
+        <div class="filter-group">
+          <label class="filter-label">Company</label>
+          <select class="form-input" id="filter-company">
+            <option value="">All companies</option>
+            ${companies.map((c) => `<option value="${escapeHtml(c)}" ${activeFilters.company === c ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('')}
+          </select>
+        </div>
+
+        <div class="filter-group filter-row">
+          <label class="filter-label">Date range</label>
+          <div class="flex gap-8">
+            <input class="form-input" type="date" id="filter-date-from" value="${activeFilters.dateFrom}" placeholder="From" style="flex:1">
+            <input class="form-input" type="date" id="filter-date-to" value="${activeFilters.dateTo}" placeholder="To" style="flex:1">
+          </div>
+        </div>
+
+        <div class="filter-group">
+          <label class="filter-label">Contact info</label>
+          <div class="flex gap-8">
+            <button class="chip-toggle ${activeFilters.hasEmail ? 'active' : ''}" id="toggle-email" type="button">Has email</button>
+            <button class="chip-toggle ${activeFilters.hasPhone ? 'active' : ''}" id="toggle-phone" type="button">Has phone</button>
+          </div>
+        </div>
+
+        <div class="flex gap-8 mt-16">
+          <button class="btn btn-secondary" id="filter-reset-btn" style="flex:1">Reset filters</button>
+          <button class="btn btn-primary" id="filter-apply-btn" style="flex:1">Apply</button>
+        </div>
       </div>
     </div>
 
@@ -87,13 +170,30 @@ function renderList(container) {
     ${canLoadMore ? '<button class="btn btn-secondary btn-block mt-16" id="load-more-btn">Load more</button>' : ''}
   `;
 
-  const searchInput = container.querySelector('#search-input');
+  bindSearchEvents(container);
+  bindFilterEvents(container);
+  bindSortEvents(container);
+  bindContactEvents(container);
+  container.querySelector('#load-more-btn')?.addEventListener('click', async (e) => {
+    e.currentTarget.disabled = true;
+    await loadRemotePage(container, currentPage + 1, false);
+  });
+}
+
+function bindSearchEvents(container) {
+  const input = container.querySelector('#search-input');
   const debouncedSearch = debounce((val) => {
     searchQuery = val;
     renderList(container);
   });
-  searchInput.addEventListener('input', (e) => debouncedSearch(e.target.value));
+  input?.addEventListener('input', (e) => debouncedSearch(e.target.value));
+  container.querySelector('#search-clear-btn')?.addEventListener('click', () => {
+    searchQuery = '';
+    renderList(container);
+  });
+}
 
+function bindSortEvents(container) {
   container.querySelectorAll('.sort-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
       sortBy = btn.dataset.sort;
@@ -101,16 +201,52 @@ function renderList(container) {
       renderList(container);
     });
   });
+}
 
-  const loadMoreBtn = container.querySelector('#load-more-btn');
-  if (loadMoreBtn) {
-    loadMoreBtn.addEventListener('click', async () => {
-      loadMoreBtn.disabled = true;
-      await loadRemotePage(container, currentPage + 1, false);
+function bindFilterEvents(container) {
+  container.querySelector('#filter-toggle-btn')?.addEventListener('click', () => {
+    filtersOpen = !filtersOpen;
+    renderList(container);
+  });
+
+  container.querySelectorAll('.filter-pill[data-reset]').forEach((pill) => {
+    pill.addEventListener('click', () => {
+      const { reset } = pill.dataset;
+      if (!reset) return;
+      if (typeof activeFilters[reset] === 'boolean') activeFilters[reset] = false;
+      else activeFilters[reset] = '';
+      renderList(container);
     });
-  }
+  });
 
-  bindContactEvents(container);
+  container.querySelector('#reset-all-btn')?.addEventListener('click', () => {
+    resetFilters();
+    renderList(container);
+  });
+
+  container.querySelector('#filter-apply-btn')?.addEventListener('click', () => {
+    activeFilters.occasion = container.querySelector('#filter-occasion')?.value || '';
+    activeFilters.company = container.querySelector('#filter-company')?.value || '';
+    activeFilters.dateFrom = container.querySelector('#filter-date-from')?.value || '';
+    activeFilters.dateTo = container.querySelector('#filter-date-to')?.value || '';
+    filtersOpen = false;
+    renderList(container);
+  });
+
+  container.querySelector('#filter-reset-btn')?.addEventListener('click', () => {
+    resetFilters();
+    filtersOpen = false;
+    renderList(container);
+  });
+
+  container.querySelector('#toggle-email')?.addEventListener('click', () => {
+    activeFilters.hasEmail = !activeFilters.hasEmail;
+    container.querySelector('#toggle-email')?.classList.toggle('active', activeFilters.hasEmail);
+  });
+  container.querySelector('#toggle-phone')?.addEventListener('click', () => {
+    activeFilters.hasPhone = !activeFilters.hasPhone;
+    container.querySelector('#toggle-phone')?.classList.toggle('active', activeFilters.hasPhone);
+  });
 }
 
 function bindContactEvents(container) {
@@ -155,8 +291,39 @@ function filterAndSort(list) {
       (c.name || '').toLowerCase().includes(q) ||
       (c.company || '').toLowerCase().includes(q) ||
       (c.occasion || '').toLowerCase().includes(q) ||
+      (c.title || '').toLowerCase().includes(q) ||
+      (c.email || '').toLowerCase().includes(q) ||
+      (c.phone || '').toLowerCase().includes(q) ||
+      (c.notes || '').toLowerCase().includes(q) ||
       (c.createdAt || '').slice(0, 10).includes(q) ||
       formatDate(c.createdAt || '').toLowerCase().includes(q)
+    );
+  }
+
+  if (activeFilters.occasion) {
+    filtered = filtered.filter((c) =>
+      (c.occasion || '').toLowerCase() === activeFilters.occasion.toLowerCase()
+    );
+  }
+  if (activeFilters.company) {
+    filtered = filtered.filter((c) =>
+      (c.company || '').toLowerCase() === activeFilters.company.toLowerCase()
+    );
+  }
+  if (activeFilters.hasEmail) {
+    filtered = filtered.filter((c) => c.email && c.email.trim());
+  }
+  if (activeFilters.hasPhone) {
+    filtered = filtered.filter((c) => c.phone && c.phone.trim());
+  }
+  if (activeFilters.dateFrom) {
+    filtered = filtered.filter((c) =>
+      (c.date || c.createdAt || '').slice(0, 10) >= activeFilters.dateFrom
+    );
+  }
+  if (activeFilters.dateTo) {
+    filtered = filtered.filter((c) =>
+      (c.date || c.createdAt || '').slice(0, 10) <= activeFilters.dateTo
     );
   }
 
@@ -170,6 +337,35 @@ function filterAndSort(list) {
   });
 
   return filtered;
+}
+
+function getUniqueValues(list, key) {
+  return [...new Set(
+    list.map((c) => (c[key] || '').trim()).filter(Boolean)
+  )].sort();
+}
+
+function countActiveFilters() {
+  return (
+    (activeFilters.occasion ? 1 : 0) +
+    (activeFilters.company ? 1 : 0) +
+    (activeFilters.hasEmail ? 1 : 0) +
+    (activeFilters.hasPhone ? 1 : 0) +
+    (activeFilters.dateFrom ? 1 : 0) +
+    (activeFilters.dateTo ? 1 : 0)
+  );
+}
+
+function resetFilters() {
+  activeFilters = {
+    occasion: '',
+    company: '',
+    hasEmail: false,
+    hasPhone: false,
+    dateFrom: '',
+    dateTo: '',
+  };
+  searchQuery = '';
 }
 
 function renderContactItem(c) {
