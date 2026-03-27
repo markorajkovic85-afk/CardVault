@@ -19,6 +19,19 @@ const EDIT_FIELDS = [
 
 let contact = null;
 let images = null;
+let heroScrollHandler = null;
+
+function getRelativeLabel(isoDate) {
+  if (!isoDate) return 'recently';
+  const from = new Date(isoDate).getTime();
+  if (Number.isNaN(from)) return 'recently';
+  const elapsedDays = Math.max(0, Math.floor((Date.now() - from) / (1000 * 60 * 60 * 24)));
+  if (elapsedDays < 30) return `${elapsedDays || 1} day${elapsedDays === 1 ? '' : 's'} ago`;
+  const months = Math.floor(elapsedDays / 30);
+  if (months < 12) return `${months} month${months === 1 ? '' : 's'} ago`;
+  const years = Math.floor(months / 12);
+  return `${years} year${years === 1 ? '' : 's'} ago`;
+}
 
 export async function render(container, { id }) {
   if (!id) {
@@ -71,13 +84,24 @@ function renderView(container) {
       <button class="btn btn-secondary" id="edit-btn" style="padding:8px 16px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg> Edit</button>
     </div>
 
-    <div class="business-card mb-16">
+    <div class="business-card mb-8" id="relationship-hero">
       <div class="card-name">${escapeHtml(c.name || '')}</div>
       ${c.title ? `<div class="card-title">${escapeHtml(c.title)}</div>` : ''}
       ${c.company ? `<div class="card-company">${escapeHtml(c.company)}</div>` : ''}
       ${c.email ? `<div class="card-detail"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 6-10 7L2 6"/></svg> <a href="mailto:${escapeHtml(c.email)}" style="color:inherit">${escapeHtml(c.email)}</a></div>` : ''}
       ${c.phone ? `<div class="card-detail"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg> <a href="tel:${escapeHtml(c.phone)}" style="color:inherit">${escapeHtml(c.phone)}</a></div>` : ''}
       ${c.website ? `<div class="card-detail"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg> <a href="${escapeHtml(c.website)}" target="_blank" style="color:inherit">${escapeHtml(c.website)}</a></div>` : ''}
+    </div>
+    <p class="relationship-chip mb-8">Met at: ${escapeHtml(c.occasion || 'Unknown event')} · ${getRelativeLabel(c.date || c.createdAt)}</p>
+    <p class="text-sm text-light mb-16">
+      Added ${formatDate(c.createdAt)}
+      ${c.updatedAt && c.updatedAt !== c.createdAt ? ` · Updated ${formatDate(c.updatedAt)}` : ''}
+    </p>
+
+    <div class="card action-row mb-16">
+      ${c.email ? `<a class="action-pill" href="mailto:${escapeHtml(c.email)}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 6-10 7L2 6"/></svg><span>Email</span></a>` : '<button class="action-pill" disabled><span>Email</span></button>'}
+      ${c.phone ? `<a class="action-pill" href="tel:${escapeHtml(c.phone)}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72"/></svg><span>Call</span></a>` : '<button class="action-pill" disabled><span>Call</span></button>'}
+      <button class="action-pill" id="follow-up-note-btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span>Add follow-up note</span></button>
     </div>
 
     ${c.occasion || c.date || c.notes ? `
@@ -86,28 +110,43 @@ function renderView(container) {
         ${c.occasion ? `<p><strong>Met at:</strong> ${escapeHtml(c.occasion)}</p>` : ''}
         ${c.date ? `<p><strong>Date:</strong> ${formatDate(c.date)}</p>` : ''}
         ${c.notes ? `<p><strong>Notes:</strong> ${escapeHtml(c.notes)}</p>` : ''}
+        <a href="#/contact/${c.id}" class="text-sm">Quick follow-up templates</a>
       </div>
     ` : ''}
 
     ${images ? `
-      <div class="card">
+      <div class="card scanned-card-panel" id="scanned-card-panel">
         <h3>Scanned Card</h3>
         ${images.front ? `<p class="text-sm text-light mb-8">Front</p><img src="${images.front}" alt="Card front" style="width:100%;border-radius:var(--radius-sm);margin-bottom:12px;">` : ''}
         ${images.back ? `<p class="text-sm text-light mb-8">Back</p><img src="${images.back}" alt="Card back" style="width:100%;border-radius:var(--radius-sm);">` : ''}
       </div>
     ` : ''}
-
-    <p class="text-sm text-light text-center mt-16">
-      Added ${formatDate(c.createdAt)}
-      ${c.updatedAt && c.updatedAt !== c.createdAt ? ` · Updated ${formatDate(c.updatedAt)}` : ''}
-    </p>
   `;
 
   container.querySelector('#back-btn').addEventListener('click', () => { location.hash = '#/contacts'; });
   container.querySelector('#edit-btn').addEventListener('click', () => { renderEdit(container); });
+  container.querySelector('#follow-up-note-btn')?.addEventListener('click', () => {
+    showToast('Follow-up note templates coming soon.', 'info', false);
+  });
+  container.querySelector('#scanned-card-panel')?.addEventListener('click', () => {
+    container.querySelector('#scanned-card-panel').classList.toggle('expanded');
+  });
+
+  const hero = container.querySelector('#relationship-hero');
+  if (heroScrollHandler) window.removeEventListener('scroll', heroScrollHandler);
+  heroScrollHandler = () => {
+    const y = Math.min(window.scrollY || 0, 180);
+    const opacity = 1 - (y / 700);
+    hero.style.opacity = String(Math.max(0.86, opacity));
+  };
+  window.addEventListener('scroll', heroScrollHandler, { passive: true });
 }
 
 function renderEdit(container) {
+  if (heroScrollHandler) {
+    window.removeEventListener('scroll', heroScrollHandler);
+    heroScrollHandler = null;
+  }
   const c = contact;
   container.innerHTML = `
     <div class="flex-between mb-16">
