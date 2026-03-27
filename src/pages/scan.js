@@ -1,6 +1,6 @@
 // CardVault — Scan & Import Business Card Page
 
-import { saveContact, saveCardImages } from '../js/db.js';
+import { saveContact, saveCardImages, getAllContacts } from '../js/db.js';
 import { syncContact } from '../js/sync.js';
 import { captureFromCamera, uploadFromGallery } from '../js/camera.js';
 import { recognizeText, mergeFields, normalizePhoneNumber } from '../js/ocr.js';
@@ -53,7 +53,46 @@ function renderStep(container) {
     case 1: renderCapture(container, 'front'); break;
     case 2: renderCapture(container, 'back'); break;
     case 3: renderReview(container); break;
-    case 4: renderContext(container); break;
+    case 4:
+      renderContext(container).catch((err) => {
+        console.warn('Failed to load context suggestions:', err);
+        container.innerHTML = `
+          ${renderStepIndicator()}
+          <h1>Add Context</h1>
+          <p class="text-light text-sm mb-16">Where did you receive this card?</p>
+          <div class="card">
+            <div class="form-group">
+              <label class="form-label">Where I Met Them</label>
+              <input class="form-input" type="text" name="occasion"
+                value="${escapeHtml(contextData.occasion)}" placeholder="e.g. Web Summit 2026">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Date</label>
+              <input class="form-input" type="date" name="date" value="${contextData.date}">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Notes</label>
+              <textarea class="form-input" name="notes" placeholder="Any additional notes...">${escapeHtml(contextData.notes)}</textarea>
+            </div>
+          </div>
+          <div class="flex gap-8 mt-16">
+            <button class="btn btn-link" id="back-btn" style="flex:1">Back</button>
+            <button class="btn btn-primary" id="save-btn" style="flex:1">Save Contact</button>
+          </div>
+        `;
+        container.querySelector('#back-btn').addEventListener('click', () => {
+          saveContextFields(container);
+          currentStep = 3;
+          renderStep(container);
+        });
+        container.querySelector('#save-btn').addEventListener('click', async () => {
+          saveContextFields(container);
+          currentStep = 5;
+          renderStep(container);
+          await doSave(container);
+        });
+      });
+      break;
     case 5: renderSaving(container); break;
   }
 }
@@ -275,7 +314,12 @@ function renderReview(container) {
   });
 }
 
-function renderContext(container) {
+async function renderContext(container) {
+  const allContacts = await getAllContacts();
+  const knownOccasions = [...new Set(
+    allContacts.map((c) => (c.occasion || '').trim()).filter(Boolean)
+  )].sort();
+
   container.innerHTML = `
     ${renderStepIndicator()}
     <h1>Add Context</h1>
@@ -284,7 +328,21 @@ function renderContext(container) {
       <div class="form-group">
         <label class="form-label">Where I Met Them</label>
         <input class="form-input" type="text" name="occasion"
-          value="${escapeHtml(contextData.occasion)}" placeholder="e.g., Tech Conference Berlin">
+          list="occasions-list"
+          value="${escapeHtml(contextData.occasion)}"
+          placeholder="e.g. Web Summit 2026"
+          autocomplete="off">
+        <datalist id="occasions-list">
+          ${knownOccasions.map((o) => `<option value="${escapeHtml(o)}"></option>`).join('')}
+        </datalist>
+        ${knownOccasions.length > 0 ? `
+          <p class="text-sm text-light mt-4">Or pick a recent event:</p>
+          <div class="occasion-chips" id="occasion-chips">
+            ${knownOccasions.slice(0, 6).map((o) => `
+              <button class="chip-toggle occasion-chip" data-value="${escapeHtml(o)}" type="button">${escapeHtml(o)}</button>
+            `).join('')}
+          </div>
+        ` : ''}
       </div>
       <div class="form-group">
         <label class="form-label">Date</label>
@@ -300,6 +358,16 @@ function renderContext(container) {
       <button class="btn btn-primary" id="save-btn" style="flex:1">Save Contact</button>
     </div>
   `;
+
+  container.querySelectorAll('.occasion-chip').forEach((chip) => {
+    chip.addEventListener('click', () => {
+      const input = container.querySelector('input[name="occasion"]');
+      if (!input) return;
+      input.value = chip.dataset.value || '';
+      container.querySelectorAll('.occasion-chip').forEach((item) => item.classList.remove('active'));
+      chip.classList.add('active');
+    });
+  });
 
   container.querySelector('#back-btn').addEventListener('click', () => {
     saveContextFields(container);
