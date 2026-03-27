@@ -116,28 +116,24 @@ export async function render(container) {
           <p class="text-sm text-light">distinct companies</p>
         </div>
 
-        <!-- Row 4: Export bar -->
+        <!-- Row 4: Symmetrical export bar -->
         <div class="bento-export-bar">
-          <div style="flex:1;min-width:0">
-            <p style="font-size:0.813rem;font-weight:600;color:var(--color-primary);margin:0">Export contacts</p>
-            <p class="text-sm text-light" style="margin:2px 0 0">${stats.totalContacts} contacts available</p>
+          <div class="export-label">
+            <p>Export contacts</p>
+            <p>${stats.totalContacts} contacts available</p>
           </div>
-          <button class="btn btn-secondary" id="csv-btn" style="font-size:0.813rem;padding:8px 14px">
+          <button class="btn btn-secondary" id="csv-btn" aria-label="Download CSV">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
             CSV
           </button>
-          <button class="btn btn-secondary" id="vcf-btn" style="font-size:0.813rem;padding:8px 14px">
+          <button class="btn btn-secondary" id="vcf-btn" aria-label="Download vCard">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
             vCard
           </button>
-          ${isSheetsConfigured() ? `
-            <span style="display:inline-flex;align-items:center;gap:4px;font-size:0.75rem;color:#166534;background:rgba(34,197,94,0.1);border-radius:999px;padding:4px 10px">
-              <span style="width:7px;height:7px;border-radius:50%;background:#22c55e;display:inline-block"></span>
-              Sheets live
-            </span>
-          ` : `
-            <a href="#/settings" style="font-size:0.75rem;color:var(--color-text-light);text-decoration:underline">Connect Sheets</a>
-          `}
+          ${isSheetsConfigured()
+            ? `<span class="sheets-badge"><span></span>Sheets live</span>`
+            : `<a href="#/settings" class="sheets-link">Connect Sheets</a>`
+          }
         </div>
 
       </div>
