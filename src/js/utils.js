@@ -45,7 +45,8 @@ export function debounce(fn, ms = 300) {
 }
 
 /**
- * Resize an image to max width, returns base64 data URL
+ * Resize an image File to max width, returns base64 data URL.
+ * Does NOT correct EXIF orientation — use camera.js fileToDataUrl for that.
  */
 export function resizeImage(file, maxWidth = 1200) {
   return new Promise((resolve, reject) => {
@@ -54,9 +55,13 @@ export function resizeImage(file, maxWidth = 1200) {
       const img = new Image();
       img.onload = () => {
         const canvas = document.createElement('canvas');
-        const scale = Math.min(1, maxWidth / img.width);
-        canvas.width = img.width * scale;
-        canvas.height = img.height * scale;
+        const isPortrait = img.naturalHeight > img.naturalWidth;
+        // For portrait images, constrain by height instead of width
+        const scale = isPortrait
+          ? Math.min(1, maxWidth / img.naturalHeight)
+          : Math.min(1, maxWidth / img.naturalWidth);
+        canvas.width = Math.round(img.naturalWidth * scale);
+        canvas.height = Math.round(img.naturalHeight * scale);
         const ctx = canvas.getContext('2d');
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
         resolve(canvas.toDataURL('image/jpeg', 0.85));
@@ -70,19 +75,25 @@ export function resizeImage(file, maxWidth = 1200) {
 }
 
 /**
- * Resize base64 image string to max width
+ * Resize a base64 image string.
+ * Handles both landscape (constrain width) and portrait (constrain height)
+ * so vertical business cards are never over-compressed.
  */
-export function resizeBase64Image(dataUrl, maxWidth = 1200) {
+export function resizeBase64Image(dataUrl, maxDimension = 1200) {
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.onload = () => {
+      const w = img.naturalWidth;
+      const h = img.naturalHeight;
+      const isPortrait = h > w;
+      // Scale so the longer dimension hits maxDimension
+      const scale = Math.min(1, maxDimension / Math.max(w, h));
       const canvas = document.createElement('canvas');
-      const scale = Math.min(1, maxWidth / img.width);
-      canvas.width = img.width * scale;
-      canvas.height = img.height * scale;
+      canvas.width = Math.round(w * scale);
+      canvas.height = Math.round(h * scale);
       const ctx = canvas.getContext('2d');
       ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-      resolve(canvas.toDataURL('image/jpeg', 0.85));
+      resolve(canvas.toDataURL('image/jpeg', isPortrait ? 0.88 : 0.85));
     };
     img.onerror = reject;
     img.src = dataUrl;
@@ -90,10 +101,10 @@ export function resizeBase64Image(dataUrl, maxWidth = 1200) {
 }
 
 /**
- * Create a thumbnail for Google Sheets storage (small)
+ * Create a thumbnail for contact list display (small, aspect-ratio-safe)
  */
-export function createThumbnail(dataUrl, maxWidth = 200) {
-  return resizeBase64Image(dataUrl, maxWidth);
+export function createThumbnail(dataUrl, maxDimension = 200) {
+  return resizeBase64Image(dataUrl, maxDimension);
 }
 
 /**
