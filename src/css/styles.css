@@ -370,6 +370,27 @@ textarea.form-input { resize: vertical; min-height: 80px; }
 .dialog p { color: var(--color-text-light); font-size: 0.875rem; margin-bottom: 20px; }
 .dialog .dialog-actions { display: flex; gap: 8px; justify-content: flex-end; }
 
+/* ===== Bottom Sheet ===== */
+.sheet-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(27, 42, 74, 0.35);
+  z-index: 2100;
+  display: flex;
+  align-items: flex-end;
+  justify-content: stretch;
+  animation: fadeIn 0.2s ease;
+}
+.sheet {
+  width: 100%;
+  background: var(--color-surface);
+  border-radius: 16px 16px 0 0;
+  padding: 20px 16px calc(16px + env(safe-area-inset-bottom, 0px));
+  box-shadow: 0 -8px 24px rgba(27, 42, 74, 0.18);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  animation: fadeInUp 0.24s ease;
+}
+
 /* ===== Entrance Animations ===== */
 @keyframes fadeInUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
