@@ -12,6 +12,12 @@ import { uploadCardImage } from './supabase-api.js';
 import { isSupabaseConfigured } from './supabase-client.js';
 import { getSession } from './supabase-auth.js';
 import {
+  addContact as sheetsAdd,
+  updateContactInSheets as sheetsUpdate,
+  deleteContactFromSheets as sheetsDelete,
+  isConfigured as isSheetsConfigured
+} from './sheets-api.js';
+import {
   addContactToProvider,
   updateContactInProvider,
   deleteContactFromProvider,
@@ -26,16 +32,40 @@ function canUseProvider(provider, session) {
   return false;
 }
 
+async function syncToSheets(action, contactId, data) {
+  if (!isSheetsConfigured() || !navigator.onLine) return;
+  if (action === 'delete') {
+    await sheetsDelete(contactId);
+  } else if (action === 'update') {
+    await sheetsUpdate(data);
+  } else {
+    await sheetsAdd(data);
+  }
+}
+
 async function syncSingleAction(action, contactId, data, targets = []) {
   const normalizedTargets = (targets || []).length ? targets : getConfiguredActiveProviders();
+  const syncSheetsViaSupabase = normalizedTargets.includes('supabase');
 
   if (normalizedTargets.length === 0) {
     throw new Error('No sync providers configured');
   }
 
   for (const provider of normalizedTargets) {
+    if (provider === 'sheets' && syncSheetsViaSupabase) {
+      continue;
+    }
+
     if (action === 'delete') {
       await deleteContactFromProvider(provider, contactId);
+      if (provider === 'supabase') {
+        // mirror to Sheets if configured
+        try {
+          await syncToSheets(action, contactId, data);
+        } catch (sheetsErr) {
+          console.warn('Sheets sync failed (non-blocking):', sheetsErr.message);
+        }
+      }
       continue;
     }
 
@@ -58,6 +88,15 @@ async function syncSingleAction(action, contactId, data, targets = []) {
 
     if (provider === 'supabase' && saved) {
       await saveContact(saved);
+    }
+
+    if (provider === 'supabase') {
+      // mirror to Sheets if configured
+      try {
+        await syncToSheets(action, contactId, contact);
+      } catch (sheetsErr) {
+        console.warn('Sheets sync failed (non-blocking):', sheetsErr.message);
+      }
     }
   }
 }
