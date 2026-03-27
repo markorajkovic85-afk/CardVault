@@ -13,6 +13,8 @@ let frontImage = null;
 let backImage = null;
 let fields = { name: '', title: '', company: '', email: '', phone: '', website: '' };
 let contextData = { occasion: '', date: new Date().toISOString().split('T')[0], notes: '' };
+let ocrFallbackActive = false;
+let geminiFallbackActive = false;
 
 export async function render(container) {
   // Reset state
@@ -21,15 +23,25 @@ export async function render(container) {
   backImage = null;
   fields = { name: '', title: '', company: '', email: '', phone: '', website: '' };
   contextData = { occasion: '', date: new Date().toISOString().split('T')[0], notes: '' };
+  ocrFallbackActive = false;
+  geminiFallbackActive = false;
 
   renderStep(container);
 }
 
 function renderStepIndicator() {
+  const labels = ['Scan front', 'Scan back (optional)', 'Review fields', 'Add context', 'Done'];
   return `
+    <div class="step-phases" aria-label="Wizard phases">
+      <span class="phase ${currentStep <= 2 ? 'active' : ''}">Capture</span>
+      <span class="phase ${currentStep === 3 ? 'active' : ''}">Review</span>
+      <span class="phase ${currentStep >= 4 ? 'active' : ''}">Context &amp; Save</span>
+    </div>
     <div class="steps">
-      ${[1,2,3,4,5].map(s => `
-        <div class="step ${s === currentStep ? 'active' : ''} ${s < currentStep ? 'done' : ''}"></div>
+      ${[1,2,3,4,5].map((s, idx) => `
+        <div class="step ${s === currentStep ? 'active' : ''} ${s < currentStep ? 'done' : ''}">
+          <span class="step-label">${labels[idx]}</span>
+        </div>
       `).join('')}
     </div>
   `;
@@ -52,12 +64,6 @@ function renderCapture(container, side) {
     <h1>Scan ${isFront ? 'Front' : 'Back'} of Card</h1>
     <p class="text-light text-sm mb-16">${isFront ? 'Take a photo or upload an image of the business card.' : 'Optionally scan the back for additional information.'}</p>
 
-    ${!isFront ? `
-      <div id="preview-area" class="scan-preview mb-16" style="display:none;">
-        <img id="preview-img" alt="Card preview">
-      </div>
-    ` : ''}
-
     ${isFront && frontImage ? `
       <div class="scan-preview mb-16">
         <img src="${frontImage}" alt="Front of card">
@@ -77,7 +83,7 @@ function renderCapture(container, side) {
     <div id="result" class="hidden"></div>
 
     ${!isFront ? `
-      <button class="btn btn-secondary btn-block mt-16" id="skip-back-btn">Skip — No back side</button>
+      <button class="btn btn-link btn-block mt-16" id="skip-back-btn">Skip — No back side</button>
     ` : ''}
   `;
 
@@ -118,9 +124,7 @@ async function handleCapture(container, side, method) {
     if (side === 'front') {
       fields = { ...extracted };
       processing.classList.add('hidden');
-      // Move to step 2 (back scan)
-      currentStep = 2;
-      renderStep(container);
+      renderPostOcrConfirmation(container);
     } else {
       // Merge back fields with front (don't overwrite)
       fields = mergeFields(fields, extracted);
@@ -131,14 +135,44 @@ async function handleCapture(container, side, method) {
     }
   } catch (err) {
     processing.classList.add('hidden');
+    ocrFallbackActive = true;
     showToast(`OCR failed: ${err.message}. You can enter details manually.`, 'warning');
-    if (side === 'front') {
-      currentStep = 3; // Skip to review for manual entry
-    } else {
-      currentStep = 3;
-    }
+    currentStep = 3;
     renderStep(container);
   }
+}
+
+function renderPostOcrConfirmation(container) {
+  container.innerHTML = `
+    ${renderStepIndicator()}
+    <div class="card scan-micro-state">
+      <div class="scan-preview preview-soft-fade mb-16">
+        <img src="${frontImage}" alt="Front scan preview">
+      </div>
+      <h3>We’ve read the card.</h3>
+      <p class="text-light text-sm">Now scan the back or continue to review extracted fields.</p>
+      <div class="flex gap-8 mt-16">
+        <button class="btn btn-secondary" id="continue-review-btn" style="flex:1">Continue</button>
+        <button class="btn btn-primary" id="scan-back-btn" style="flex:1">Scan Back</button>
+      </div>
+    </div>
+  `;
+
+  const goReview = () => {
+    currentStep = 3;
+    renderStep(container);
+  };
+
+  container.querySelector('#scan-back-btn').addEventListener('click', () => {
+    currentStep = 2;
+    renderStep(container);
+  });
+  container.querySelector('#continue-review-btn').addEventListener('click', goReview);
+
+  setTimeout(() => {
+    const continueBtn = container.querySelector('#continue-review-btn');
+    if (continueBtn) goReview();
+  }, 1800);
 }
 
 function renderReview(container) {
@@ -157,6 +191,15 @@ function renderReview(container) {
     ${renderStepIndicator()}
     <h1>Review Details</h1>
     <p class="text-light text-sm mb-16">Check and correct the extracted information.</p>
+    <div class="scan-ai-banner mb-16">
+      <strong>AI extracted ${REVIEW_FIELDS.filter((f) => Boolean(fields[f.key])).length} fields from your card.</strong>
+      <span>Please verify before saving.</span>
+    </div>
+    ${ocrFallbackActive ? `
+      <div class="inline-alert mb-16">
+        We couldn’t read this card. You can still type details manually — your photos are saved.
+      </div>
+    ` : ''}
     <div class="card">
       ${REVIEW_FIELDS.map(f => `
         <div class="form-group">
@@ -165,15 +208,19 @@ function renderReview(container) {
             value="${escapeHtml(fields[f.key] || '')}" placeholder="${f.label}">
         </div>
       `).join('')}
+      <p class="text-sm text-light">AI may be wrong on company names and phone numbers — double-check these.</p>
     </div>
     ${hasGemini ? `
-      <button class="btn btn-secondary btn-block mt-16" id="smart-read-btn" style="border-color:var(--color-accent);color:var(--color-accent);">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg> Smart Read (AI)
+      <button class="btn btn-secondary btn-block mt-16 btn-ai-secondary" id="smart-read-btn">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+        Smart Read
+        <span class="ai-badge">Gemini</span>
       </button>
       <p class="text-sm text-light text-center mt-8" id="smart-read-hint">Fields wrong? Let AI re-read the card.</p>
+      ${geminiFallbackActive ? '<p class="text-sm text-center mt-8"><span class="fallback-badge">AI re-read unavailable — using camera text only.</span></p>' : ''}
     ` : ''}
     <div class="flex gap-8 mt-16">
-      <button class="btn btn-secondary" id="back-btn" style="flex:1">Back</button>
+      <button class="btn btn-link" id="back-btn" style="flex:1">Back</button>
       <button class="btn btn-primary" id="next-btn" style="flex:1">Next</button>
     </div>
   `;
@@ -188,6 +235,7 @@ function renderReview(container) {
       hint.textContent = '';
 
       try {
+        geminiFallbackActive = false;
         const aiFields = await extractFieldsWithAI(frontImage, backImage);
 
         // Update form fields with AI results
@@ -199,14 +247,15 @@ function renderReview(container) {
           }
         });
 
-        btn.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--color-success)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg> AI Read Complete';
+        btn.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--color-success)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg> AI updated these fields.';
         btn.style.borderColor = 'var(--color-success)';
         btn.style.color = 'var(--color-success)';
         showToast('Fields updated with AI reading', 'success', false);
       } catch (err) {
+        geminiFallbackActive = true;
         btn.disabled = false;
-        btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg> Smart Read (AI)';
-        hint.textContent = '';
+        btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg> Smart Read <span class="ai-badge">Gemini</span>';
+        hint.innerHTML = '<span class="fallback-badge">AI re-read unavailable — using camera text only.</span>';
         showToast(`AI read failed: ${err.message}`, 'error');
       }
     });
@@ -246,7 +295,7 @@ function renderContext(container) {
       </div>
     </div>
     <div class="flex gap-8 mt-16">
-      <button class="btn btn-secondary" id="back-btn" style="flex:1">Back</button>
+      <button class="btn btn-link" id="back-btn" style="flex:1">Back</button>
       <button class="btn btn-primary" id="save-btn" style="flex:1">Save Contact</button>
     </div>
   `;

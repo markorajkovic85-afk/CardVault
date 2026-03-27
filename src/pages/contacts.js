@@ -22,6 +22,11 @@ function toListContact(contact) {
 }
 
 export async function render(container) {
+  const queuedFilter = localStorage.getItem('cardvault.contactsFilter');
+  if (queuedFilter !== null) {
+    searchQuery = queuedFilter;
+    localStorage.removeItem('cardvault.contactsFilter');
+  }
   currentPage = 1;
   contacts = (await getAllContacts()).map(toListContact).filter((c) => !c.pendingDelete);
   renderList(container);
@@ -147,7 +152,9 @@ function filterAndSort(list) {
     filtered = filtered.filter((c) =>
       (c.name || '').toLowerCase().includes(q) ||
       (c.company || '').toLowerCase().includes(q) ||
-      (c.occasion || '').toLowerCase().includes(q)
+      (c.occasion || '').toLowerCase().includes(q) ||
+      (c.createdAt || '').slice(0, 10).includes(q) ||
+      formatDate(c.createdAt || '').toLowerCase().includes(q)
     );
   }
 
