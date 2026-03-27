@@ -70,6 +70,20 @@ function getDB() {
             store.createIndex('userId', 'userId');
           }
         }
+      },
+      // When another tab/device opens a newer DB version, reload this tab gracefully
+      blocking() {
+        if (dbPromise) {
+          dbPromise = null;
+        }
+      },
+      blocked() {
+        console.warn('CardVault DB upgrade blocked by another tab. Please close other tabs.');
+      },
+      terminated() {
+        dbPromise = null;
+        // Reload the page so the user gets a fresh DB connection
+        window.location.reload();
       }
     });
   }

@@ -4,6 +4,8 @@ import { getMyCard, saveMyCard } from '../js/db.js';
 import { generateQR, buildVCard } from '../js/qr.js';
 import { showToast } from '../components/toast.js';
 import { escapeHtml, resizeImage } from '../js/utils.js';
+import { fetchMyCardRemote, saveMyCardRemote } from '../js/supabase-api.js';
+import { isSupabaseConfigured } from '../js/supabase-client.js';
 
 const FIELDS = [
   { key: 'name', label: 'Full Name', type: 'text', placeholder: 'John Doe', required: true },
@@ -18,9 +20,10 @@ let cardData = null;
 let editing = false;
 
 export async function render(container) {
+  // 1. Try local IndexedDB first (fast)
   cardData = await getMyCard();
 
-  // Fallback: restore from localStorage if IndexedDB was cleared
+  // 2. Fallback to localStorage backup
   if (!cardData) {
     try {
       const backup = localStorage.getItem('myCardBackup');
@@ -29,6 +32,18 @@ export async function render(container) {
         await saveMyCard(cardData);
       }
     } catch { /* ignore corrupt backup */ }
+  }
+
+  // 3. Fallback to Supabase user_metadata (cross-device sync)
+  if (!cardData && isSupabaseConfigured()) {
+    try {
+      const remote = await fetchMyCardRemote();
+      if (remote) {
+        cardData = remote;
+        await saveMyCard(cardData);
+        localStorage.setItem('myCardBackup', JSON.stringify(cardData));
+      }
+    } catch { /* ignore remote fetch failure */ }
   }
 
   editing = false;
@@ -113,7 +128,6 @@ function renderEdit(container) {
     </div>
   `;
 
-  // Photo upload
   const photoBtn = container.querySelector('#photo-btn');
   const photoInput = container.querySelector('#photo-input');
   photoBtn.addEventListener('click', () => photoInput.click());
@@ -125,7 +139,6 @@ function renderEdit(container) {
     }
   });
 
-  // Cancel
   container.querySelector('#cancel-btn').addEventListener('click', () => {
     editing = false;
     if (cardData?.name) {
@@ -135,7 +148,6 @@ function renderEdit(container) {
     }
   });
 
-  // Save
   container.querySelector('#save-btn').addEventListener('click', async () => {
     const formData = {};
     FIELDS.forEach(f => {
@@ -148,11 +160,18 @@ function renderEdit(container) {
     }
 
     cardData = { ...cardData, ...formData };
+
+    // Save locally
     await saveMyCard(cardData);
-    // Backup to localStorage for persistence across cache clears
     try { localStorage.setItem('myCardBackup', JSON.stringify(cardData)); } catch { /* quota */ }
+
+    // Sync to Supabase so other devices get it
+    if (isSupabaseConfigured()) {
+      await saveMyCardRemote(cardData);
+    }
+
     editing = false;
-    showToast('Card saved!', 'success', false);
+    showToast('Card saved and synced!', 'success', false);
     renderCard(container);
   });
 }
