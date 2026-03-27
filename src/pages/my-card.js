@@ -20,38 +20,44 @@ let cardData = null;
 let editing = false;
 
 export async function render(container) {
-  // 1. Try local IndexedDB first (fast)
-  cardData = await getMyCard();
+  try {
+    // 1. Try local IndexedDB first (fast)
+    cardData = await getMyCard();
 
-  // 2. Fallback to localStorage backup
-  if (!cardData) {
-    try {
-      const backup = localStorage.getItem('myCardBackup');
-      if (backup) {
-        cardData = JSON.parse(backup);
-        await saveMyCard(cardData);
-      }
-    } catch { /* ignore corrupt backup */ }
-  }
+    // 2. Fallback to localStorage backup
+    if (!cardData) {
+      try {
+        const backup = localStorage.getItem('myCardBackup');
+        if (backup) {
+          cardData = JSON.parse(backup);
+          await saveMyCard(cardData);
+        }
+      } catch { /* ignore corrupt backup */ }
+    }
 
-  // 3. Fallback to Supabase user_metadata (cross-device sync)
-  if (!cardData && isSupabaseConfigured()) {
-    try {
-      const remote = await fetchMyCardRemote();
-      if (remote) {
-        cardData = remote;
-        await saveMyCard(cardData);
-        localStorage.setItem('myCardBackup', JSON.stringify(cardData));
-      }
-    } catch { /* ignore remote fetch failure */ }
-  }
+    // 3. Fallback to Supabase user_metadata (cross-device sync)
+    if (!cardData && isSupabaseConfigured()) {
+      try {
+        const remote = await fetchMyCardRemote();
+        if (remote) {
+          cardData = remote;
+          await saveMyCard(cardData);
+          localStorage.setItem('myCardBackup', JSON.stringify(cardData));
+        }
+      } catch { /* ignore remote fetch failure */ }
+    }
 
-  editing = false;
+    editing = false;
 
-  if (!cardData || !cardData.name) {
+    if (!cardData || !cardData.name) {
+      renderEmpty(container);
+    } else {
+      renderCard(container);
+    }
+  } catch (error) {
+    console.error('Failed to render my card page:', error);
+    cardData = null;
     renderEmpty(container);
-  } else {
-    renderCard(container);
   }
 }
 
@@ -167,7 +173,13 @@ function renderEdit(container) {
 
     // Sync to Supabase so other devices get it
     if (isSupabaseConfigured()) {
-      await saveMyCardRemote(cardData);
+      const remoteResult = await saveMyCardRemote(cardData);
+      if (!remoteResult?.synced) {
+        showToast(`Saved locally. Sync warning: ${remoteResult?.error || 'not synced to cloud.'}`, 'warning', false);
+        editing = false;
+        renderCard(container);
+        return;
+      }
     }
 
     editing = false;
