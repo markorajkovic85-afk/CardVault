@@ -279,7 +279,7 @@ async function doSave(container) {
   const contactId = uuid();
   const now = new Date().toISOString();
 
-  // Create thumbnail for Sheets
+  // Create thumbnail for contact list display
   let thumbnail = '';
   if (frontImage) {
     try {
@@ -307,11 +307,11 @@ async function doSave(container) {
       await saveCardImages(contactId, frontImage, backImage);
     }
 
-    // Try to sync to Google Sheets
+    // Try to sync to Supabase
     const result = await syncContact(contact);
 
     if (result.synced) {
-      showToast('Contact saved & synced to Google Sheets!', 'success');
+      showToast('Contact saved & synced!', 'success');
     } else if (result.reason === 'offline') {
       showToast('Contact saved locally. Will sync when online.', 'warning');
     } else {

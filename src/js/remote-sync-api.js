@@ -1,98 +1,71 @@
-import { testConnection, fetchContacts, addContact, updateContactInSheets, deleteContactFromSheets, isConfigured as isSheetsConfigured } from './sheets-api.js';
-import { testNotionConnection, fetchNotionContacts, addContactToNotion, updateContactInNotion, deleteContactFromNotion, isNotionConfigured } from './notion-api.js';
-
-const PROVIDERS = ['sheets', 'notion'];
+import { isSupabaseConfigured } from './supabase-client.js';
+import { getSession } from './supabase-auth.js';
+import { fetchContactsPage, upsertContact, deleteContactRemote } from './supabase-api.js';
 
 export function getSyncMode() {
-  const mode = localStorage.getItem('syncMode');
-  if (mode) return mode;
-
-  // Backward compatibility for the old key
-  const legacy = localStorage.getItem('syncProvider');
-  if (legacy === 'notion') return 'notion';
-  return 'sheets';
+  return 'supabase';
 }
 
-export function setSyncMode(mode) {
-  localStorage.setItem('syncMode', mode);
-  localStorage.removeItem('syncProvider');
+export function setSyncMode() {
+  return 'supabase';
 }
 
-export function getProviderLabel(provider) {
-  return provider === 'notion' ? 'Notion' : 'Google Sheets';
+export function getProviderLabel() {
+  return 'Supabase';
 }
 
 export function getActiveProviders() {
-  const mode = getSyncMode();
-  if (mode === 'both') return [...PROVIDERS];
-  return PROVIDERS.includes(mode) ? [mode] : ['sheets'];
+  return ['supabase'];
 }
 
-export function isProviderConfigured(provider) {
-  return provider === 'notion' ? isNotionConfigured() : isSheetsConfigured();
+export function isProviderConfigured() {
+  return isSupabaseConfigured();
 }
 
 export function getConfiguredActiveProviders() {
-  return getActiveProviders().filter(isProviderConfigured);
+  return isSupabaseConfigured() ? ['supabase'] : [];
 }
 
 export function isSyncConfigured() {
-  return getConfiguredActiveProviders().length > 0;
+  return isSupabaseConfigured();
 }
 
-export async function testProviderConnection(provider) {
-  return provider === 'notion' ? testNotionConnection() : testConnection();
+export async function testProviderConnection() {
+  if (!isSupabaseConfigured()) {
+    return { success: false, error: 'Supabase URL and anon key are required.' };
+  }
+  try {
+    const session = await getSession();
+    return {
+      success: true,
+      provider: 'supabase',
+      authenticated: Boolean(session),
+      rowCount: session ? 'Authenticated' : 'Not signed in'
+    };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
 }
 
-export async function fetchContactsFromProvider(provider) {
-  return provider === 'notion' ? fetchNotionContacts() : fetchContacts();
+export async function fetchContactsFromProvider() {
+  const result = await fetchContactsPage({ page: 1, pageSize: 500 });
+  return result.contacts;
 }
 
-export async function addContactToProvider(provider, contact) {
-  return provider === 'notion' ? addContactToNotion(contact) : addContact(contact);
+export async function addContactToProvider(_provider, contact) {
+  return upsertContact(contact);
 }
 
-export async function updateContactInProvider(provider, contact) {
-  return provider === 'notion' ? updateContactInNotion(contact) : updateContactInSheets(contact);
+export async function updateContactInProvider(_provider, contact) {
+  return upsertContact(contact);
 }
 
-export async function deleteContactFromProvider(provider, contactId) {
-  return provider === 'notion' ? deleteContactFromNotion(contactId) : deleteContactFromSheets(contactId);
+export async function deleteContactFromProvider(_provider, contactId) {
+  return deleteContactRemote(contactId);
 }
 
 export async function fetchContactsFromActiveProviders() {
-  const providers = getConfiguredActiveProviders();
-  if (providers.length === 0) return [];
-
-  const merged = new Map();
-
-  // Fetch all providers in parallel with a 5s timeout per provider
-  const timeout = (ms) => new Promise((_, reject) =>
-    setTimeout(() => reject(new Error('timeout')), ms)
-  );
-
-  const results = await Promise.allSettled(
-    providers.map(provider =>
-      Promise.race([fetchContactsFromProvider(provider), timeout(5000)])
-    )
-  );
-
-  for (const result of results) {
-    if (result.status !== 'fulfilled' || !result.value) continue;
-    for (const contact of result.value) {
-      const existing = merged.get(contact.id);
-      if (!existing) {
-        merged.set(contact.id, contact);
-        continue;
-      }
-
-      const existingUpdated = existing.updatedAt || existing.createdAt || '';
-      const incomingUpdated = contact.updatedAt || contact.createdAt || '';
-      if (incomingUpdated >= existingUpdated) {
-        merged.set(contact.id, contact);
-      }
-    }
-  }
-
-  return Array.from(merged.values());
+  if (!isSupabaseConfigured()) return [];
+  const result = await fetchContactsPage({ page: 1, pageSize: 500 });
+  return result.contacts;
 }
