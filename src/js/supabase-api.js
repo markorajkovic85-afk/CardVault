@@ -1,7 +1,10 @@
 // CardVault — Supabase API
 
 import { getSupabaseClient } from './supabase-client.js';
-import { getActiveUserId } from './supabase-auth.js';
+
+function getActiveUserId() {
+  return localStorage.getItem('cardvault.activeUserId') || '';
+}
 
 export async function fetchContactsPage({ page = 1, pageSize = 50 } = {}) {
   const supabase = getSupabaseClient();
